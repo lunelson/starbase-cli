@@ -8,157 +8,119 @@ Stars are a curation signal that typically becomes an unmanageable inbox. **star
 
 - **Shallow clones** of starred repos (configurable recency window)
 - **Hybrid search** (BM25 + optional vector) over metadata, READMEs, and high-signal files
-- **Bubbletea TUI** for browsing, search, and actions
+- **Bubbletea TUI** for browsing, multi-select, and actions
 - **LLM-optimized exports** — paths, markdown, workspaces for feeding to coding agents
 - **Multi-machine sync** — config/manifest via dotfiles; database/clones are derived state
 
 ## Installation
 
 ```bash
-go install github.com/lunelson/starbase-cli/cmd/starbase@latest
-```
-
-Or build from source:
-
-```bash
-git clone https://github.com/lunelson/starbase-cli
-cd starbase-cli
+# Build from source
 make build
+
+# Install to $GOPATH/bin
+make install
+
+# Or add bin/ to PATH
+export PATH="$PATH:$(pwd)/bin"
 ```
 
 ## Quick Start
 
 ```bash
-# Initialize starbase
+# Initialize starbase directories
 starbase init
 
-# Sync your starred repos (last 30 days by default)
-starbase sync
-
-# Sync all stars
-starbase sync --full
+# Sync starred repos from last 6 months
+starbase sync --since=6mo
 
 # Search your repos
-starbase search "tui framework"
+starbase search "golang cli framework"
 
-# Browse with TUI
+# Browse in TUI
 starbase browse
 
-# Export paths for feeding to LLM
-starbase export --format=paths | xargs -I {} cat {}/README.md
+# Export paths for LLM context
+starbase export "bubbletea" --format=paths
 ```
 
 ## Commands
 
-### Core Commands
-
 | Command | Description |
 |---------|-------------|
-| `init` | Initialize starbase directories and database |
-| `sync` | Sync starred repos from forges |
-| `search <query>` | Search tracked repositories |
-| `list` | List all tracked repositories |
+| `init` | Initialize directories and database |
+| `sync` | Fetch stars from GitHub, clone/update repos |
+| `search <query>` | BM25 search over repos |
+| `list` | List all tracked repos |
 | `browse` | Launch interactive TUI |
-
-### Export & Annotation
-
-| Command | Description |
-|---------|-------------|
-| `export [query]` | Export repo information |
+| `export <query>` | Export repo info (paths/json/yaml/markdown) |
 | `collection` | Manage local collections |
-| `note <query> [text]` | Add/view notes on repos |
-| `pin <query>` | Pin repos to prevent pruning |
-| `unpin <query>` | Unpin repos |
-
-### Index Management
-
-| Command | Description |
-|---------|-------------|
-| `index rebuild` | Rebuild search index |
-| `index stats` | Show index statistics |
+| `note` | Add notes to repos |
+| `pin`/`unpin` | Mark repos to prevent pruning |
+| `index rebuild` | Rebuild FTS search index |
 
 ## Configuration
 
-Configuration lives in `~/.config/starbase/config.yaml`:
+Config lives in `~/.config/starbase/`:
 
 ```yaml
-version: 1
+# config.yaml
+sync:
+  default_window: 30d    # only sync recent stars by default
+  clone_private: false   # skip private repos
+  clone_archived: false  # skip archived repos
 
 clone:
-  depth: 1
+  depth: 1               # shallow clone
   single_branch: true
-  skip_submodules: true
   skip_lfs: true
-
-sync:
-  default_window: 30d
-  clone_missing: true
-  clone_private: false
-  clone_archived: false
-  max_repos_per_sync: 100
-
-search:
-  engine: bm25
-  default_limit: 20
 
 forges:
   github:
     enabled: true
-  gitlab:
-    enabled: false
 ```
 
 ## Authentication
 
-starbase uses the following token resolution order:
+starbase resolves GitHub tokens in order:
+1. `STARBASE_GITHUB_TOKEN` env var
+2. `gh` CLI auth (`gh auth token`)
 
-1. `STARBASE_GITHUB_TOKEN` environment variable
-2. `GITHUB_TOKEN` environment variable  
-3. `gh` CLI (if authenticated)
+```bash
+# Recommended: use gh CLI
+gh auth login
+
+# Or set directly
+export STARBASE_GITHUB_TOKEN="ghp_..."
+```
 
 ## Data Layout
 
 ```
 ~/.config/starbase/           # Syncable (dotfiles)
-├── config.yaml
-└── manifest.yaml
+├── config.yaml               # Settings
+└── manifest.yaml             # Tracked repos + annotations
 
-~/.local/share/starbase/      # Machine-local
-├── starbase.db
-├── cache/
-└── clones/
+~/.local/share/starbase/      # Machine-local (derived)
+├── starbase.db               # SQLite: cache + FTS5 index
+└── clones/                   # Shallow clones
     └── github/<owner>/<repo>/
 ```
 
-## Search Query Syntax
+The **manifest** is the source of truth. Database and clones can be rebuilt on any machine via `starbase sync --full`.
 
-| Filter | Example | Description |
-|--------|---------|-------------|
-| Free text | `bubbletea tui` | Search all indexed fields |
-| `lang:` | `lang:go` | Filter by primary language |
-| `topic:` | `topic:cli` | Filter by topic/tag |
-
-## Output Formats
-
-Export supports multiple formats:
+## Development
 
 ```bash
-starbase export --format=paths      # Local paths only
-starbase export --format=json       # Full JSON
-starbase export --format=yaml       # Full YAML  
-starbase export --format=markdown   # Markdown documentation
+# Run tests
+make test
+
+# Build
+make build
+
+# Lint (requires golangci-lint)
+make lint
 ```
-
-## TUI Key Bindings
-
-| Key | Action |
-|-----|--------|
-| `j` / `↓` | Move down |
-| `k` / `↑` | Move up |
-| `/` | Focus search |
-| `Enter` | Select / Execute search |
-| `Esc` | Cancel search |
-| `q` | Quit |
 
 ## License
 

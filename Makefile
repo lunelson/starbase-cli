@@ -1,4 +1,4 @@
-.PHONY: build test lint clean install
+.PHONY: build test lint clean install install-local
 
 BINARY := starbase
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -10,11 +10,26 @@ build:
 test:
 	go test ./... -v
 
+test-short:
+	go test ./... -short
+
 lint:
 	golangci-lint run
 
 clean:
 	rm -rf bin/
 
+# Install to GOPATH/bin (requires GOPATH set)
 install: build
-	cp bin/$(BINARY) $(GOPATH)/bin/
+	@if [ -z "$(GOPATH)" ]; then echo "GOPATH not set, using go env GOPATH"; fi
+	cp bin/$(BINARY) $$(go env GOPATH)/bin/
+
+# Install to /usr/local/bin (requires sudo on macOS)
+install-local: build
+	cp bin/$(BINARY) /usr/local/bin/
+
+# Install to ~/.local/bin (no sudo needed)
+install-user: build
+	mkdir -p ~/.local/bin
+	cp bin/$(BINARY) ~/.local/bin/
+	@echo "Ensure ~/.local/bin is in your PATH"
