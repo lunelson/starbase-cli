@@ -121,13 +121,12 @@ CREATE INDEX IF NOT EXISTS idx_embeddings_repo ON embeddings(repo_id, doc_type);
 
 -- FTS5 virtual table for BM25 search
 CREATE VIRTUAL TABLE IF NOT EXISTS search_index USING fts5(
-    repo_id,
+    repo_id UNINDEXED,
     name,
     description,
     topics,
     readme_content,
     manifest_content,
-    content='',
     tokenize='porter'
 );
 `
