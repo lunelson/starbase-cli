@@ -29,6 +29,7 @@ var (
 	syncPullOnly     bool
 	syncSince        string
 	syncDryRun       bool
+	syncConcurrency  int
 )
 
 func init() {
@@ -37,8 +38,9 @@ func init() {
 	syncCmd.Flags().BoolVar(&syncFull, "full", false, "Clone all stars, not just recent window")
 	syncCmd.Flags().BoolVar(&syncMetadataOnly, "metadata-only", false, "Skip git operations, update API data only")
 	syncCmd.Flags().BoolVar(&syncPullOnly, "pull-only", false, "Only update existing clones")
-	syncCmd.Flags().StringVar(&syncSince, "since", "", "Override recency window (e.g., 7d, 2w)")
+	syncCmd.Flags().StringVar(&syncSince, "since", "", "Override recency window (e.g., 7d, 2w, 6mo)")
 	syncCmd.Flags().BoolVar(&syncDryRun, "dry-run", false, "Show plan without executing")
+	syncCmd.Flags().IntVar(&syncConcurrency, "concurrency", 0, "Number of parallel git operations (default: 4, max: 10)")
 }
 
 func runSync(cmd *cobra.Command, args []string) error {
@@ -97,6 +99,11 @@ func runSync(cmd *cobra.Command, args []string) error {
 		since = &t
 	}
 
+	// Override concurrency if flag provided
+	if syncConcurrency > 0 {
+		cfg.Sync.Concurrency = syncConcurrency
+	}
+
 	// Build sync options
 	opts := sync.Options{
 		Full:         syncFull,
@@ -137,19 +144,27 @@ func parseDuration(s string) (time.Duration, error) {
 		return 0, fmt.Errorf("empty duration")
 	}
 
-	unit := s[len(s)-1]
-	value := s[:len(s)-1]
-
 	var multiplier time.Duration
-	switch unit {
-	case 'd':
-		multiplier = 24 * time.Hour
-	case 'w':
-		multiplier = 7 * 24 * time.Hour
-	case 'h':
-		multiplier = time.Hour
-	default:
-		return 0, fmt.Errorf("unknown duration unit: %c (use h, d, or w)", unit)
+	var value string
+
+	// Check for "mo" suffix (months)
+	if len(s) >= 3 && s[len(s)-2:] == "mo" {
+		multiplier = 30 * 24 * time.Hour // approximate month
+		value = s[:len(s)-2]
+	} else {
+		unit := s[len(s)-1]
+		value = s[:len(s)-1]
+
+		switch unit {
+		case 'd':
+			multiplier = 24 * time.Hour
+		case 'w':
+			multiplier = 7 * 24 * time.Hour
+		case 'h':
+			multiplier = time.Hour
+		default:
+			return 0, fmt.Errorf("unknown duration unit: %c (use h, d, w, or mo)", unit)
+		}
 	}
 
 	var n int

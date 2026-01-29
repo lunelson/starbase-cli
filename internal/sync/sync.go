@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/lunelson/starbase-cli/internal/config"
@@ -84,6 +85,10 @@ func (s *Syncer) Run(ctx context.Context, opts Options) (*Result, error) {
 		since = &t
 	}
 
+	// Collect all stars and prepare git jobs
+	var allJobs []git.Job
+	jobToStar := make(map[string]starInfo) // job ID -> star info
+
 	// Fetch stars from all enabled forges
 	for forgeName, f := range s.forges {
 		fmt.Fprintf(s.out, "Fetching stars from %s...\n", forgeName)
@@ -98,19 +103,38 @@ func (s *Syncer) Run(ctx context.Context, opts Options) (*Result, error) {
 
 		fmt.Fprintf(s.out, "Found %d starred repos\n", len(stars))
 
-		// Process each star
+		// Process each star: save to DB and prepare git jobs
 		for i, star := range stars {
 			if opts.MaxRepos > 0 && i >= opts.MaxRepos {
 				fmt.Fprintf(s.out, "Reached max repos limit (%d)\n", opts.MaxRepos)
 				break
 			}
 
-			err := s.processStar(ctx, f, star, opts, result)
+			job, info, err := s.prepareStar(ctx, f, star, opts, result)
 			if err != nil {
 				result.Errors++
 				result.ErrorMsgs = append(result.ErrorMsgs, fmt.Sprintf("%s: %v", star.FullName, err))
+				continue
+			}
+
+			if job != nil {
+				allJobs = append(allJobs, *job)
+				jobToStar[job.ID] = info
 			}
 		}
+	}
+
+	// Execute git operations in parallel (unless dry-run or metadata-only)
+	if !opts.DryRun && !opts.MetadataOnly && len(allJobs) > 0 {
+		concurrency := s.cfg.Sync.Concurrency
+		if concurrency <= 0 {
+			concurrency = 4
+		}
+
+		fmt.Fprintf(s.out, "\nExecuting %d git operations (%d workers)...\n", len(allJobs), concurrency)
+
+		results := git.RunAll(ctx, allJobs, concurrency)
+		s.processGitResults(ctx, results, jobToStar, result)
 	}
 
 	return result, nil
@@ -142,13 +166,22 @@ func (s *Syncer) fetchAllStars(ctx context.Context, f forge.Forge, since *time.T
 	return allStars, nil
 }
 
-func (s *Syncer) processStar(ctx context.Context, f forge.Forge, star forge.StarredRepo, opts Options, result *Result) error {
+// starInfo holds info needed to process git results
+type starInfo struct {
+	RepoID    int64
+	FullName  string
+	LocalPath string
+	IsUpdate  bool
+}
+
+// prepareStar saves metadata to DB and returns a git job if needed
+func (s *Syncer) prepareStar(ctx context.Context, f forge.Forge, star forge.StarredRepo, opts Options, result *Result) (*git.Job, starInfo, error) {
 	forgeName := f.Name()
 
 	// Check if repo exists in DB
 	existing, err := s.db.GetRepoByForgeID(forgeName, star.ForgeID)
 	if err != nil {
-		return fmt.Errorf("checking repo: %w", err)
+		return nil, starInfo{}, fmt.Errorf("checking repo: %w", err)
 	}
 
 	// Upsert repo to database
@@ -173,7 +206,7 @@ func (s *Syncer) processStar(ctx context.Context, f forge.Forge, star forge.Star
 
 	repoID, err := s.db.InsertRepo(repo)
 	if err != nil {
-		return fmt.Errorf("saving repo: %w", err)
+		return nil, starInfo{}, fmt.Errorf("saving repo: %w", err)
 	}
 
 	// Upsert metadata
@@ -190,29 +223,35 @@ func (s *Syncer) processStar(ctx context.Context, f forge.Forge, star forge.Star
 	}
 
 	if err := s.db.UpsertMetadata(meta); err != nil {
-		return fmt.Errorf("saving metadata: %w", err)
+		return nil, starInfo{}, fmt.Errorf("saving metadata: %w", err)
 	}
 
 	// Skip git operations if metadata-only
 	if opts.MetadataOnly {
 		result.Skipped++
-		return nil
+		return nil, starInfo{}, nil
 	}
 
 	// Skip private repos if configured
 	if star.IsPrivate && !s.cfg.Sync.ClonePrivate {
 		result.Skipped++
-		return nil
+		return nil, starInfo{}, nil
 	}
 
 	// Skip archived repos if configured
 	if star.IsArchived && !s.cfg.Sync.CloneArchived {
 		result.Skipped++
-		return nil
+		return nil, starInfo{}, nil
 	}
 
 	// Determine local path
 	localPath := filepath.Join(s.paths.ClonesDir, forgeName, star.Owner, star.Name)
+
+	info := starInfo{
+		RepoID:    repoID,
+		FullName:  star.FullName,
+		LocalPath: localPath,
+	}
 
 	if opts.DryRun {
 		if existing != nil && existing.LocalPath != nil {
@@ -220,58 +259,81 @@ func (s *Syncer) processStar(ctx context.Context, f forge.Forge, star forge.Star
 		} else {
 			fmt.Fprintf(s.out, "[dry-run] Would clone: %s\n", star.FullName)
 		}
-		return nil
+		return nil, starInfo{}, nil
 	}
 
 	// Check if already cloned
 	if git.IsGitRepo(localPath) {
 		if !opts.PullOnly && s.cfg.Sync.CloneMissing {
-			// Update existing clone
-			fmt.Fprintf(s.out, "Updating %s...\n", star.FullName)
-			if err := git.Pull(ctx, localPath, s.cfg.Sync.ResetOnConflict); err != nil {
-				return fmt.Errorf("pulling: %w", err)
-			}
-
-			// Re-extract and index after update
-			if err := s.extractor.ExtractAndIndex(ctx, repoID, localPath); err != nil {
-				// Log but don't fail sync
-				fmt.Fprintf(s.out, "  Warning: indexing failed: %v\n", err)
-			}
-
-			result.Updated++
+			info.IsUpdate = true
+			return &git.Job{
+				ID:    star.FullName,
+				Type:  git.JobPull,
+				Path:  localPath,
+				Reset: s.cfg.Sync.ResetOnConflict,
+			}, info, nil
 		}
-	} else if !opts.PullOnly {
-		// Clone new repo
-		fmt.Fprintf(s.out, "Cloning %s...\n", star.FullName)
-
-		cloneOpts := git.CloneOptions{
-			Depth:          s.cfg.Clone.Depth,
-			SingleBranch:   s.cfg.Clone.SingleBranch,
-			SkipSubmodules: s.cfg.Clone.SkipSubmodules,
-			SkipLFS:        s.cfg.Clone.SkipLFS,
-		}
-
-		if err := git.Clone(ctx, star.CloneURL, localPath, cloneOpts); err != nil {
-			return fmt.Errorf("cloning: %w", err)
-		}
-
-		// Update database with local path
-		if err := s.db.UpdateRepoLocalPath(repoID, localPath, time.Now()); err != nil {
-			return fmt.Errorf("updating local path: %w", err)
-		}
-
-		// Extract and index after clone
-		if err := s.extractor.ExtractAndIndex(ctx, repoID, localPath); err != nil {
-			// Log but don't fail sync
-			fmt.Fprintf(s.out, "  Warning: indexing failed: %v\n", err)
-		}
-
-		result.Cloned++
-	} else {
 		result.Skipped++
+		return nil, starInfo{}, nil
+	} else if !opts.PullOnly {
+		return &git.Job{
+			ID:   star.FullName,
+			Type: git.JobClone,
+			URL:  star.CloneURL,
+			Path: localPath,
+			Options: git.CloneOptions{
+				Depth:          s.cfg.Clone.Depth,
+				SingleBranch:   s.cfg.Clone.SingleBranch,
+				SkipSubmodules: s.cfg.Clone.SkipSubmodules,
+				SkipLFS:        s.cfg.Clone.SkipLFS,
+			},
+		}, info, nil
 	}
 
-	return nil
+	result.Skipped++
+	return nil, starInfo{}, nil
+}
+
+// processGitResults handles completed git jobs
+func (s *Syncer) processGitResults(ctx context.Context, results []git.JobResult, jobToStar map[string]starInfo, result *Result) {
+	var mu sync.Mutex
+
+	for _, r := range results {
+		info, ok := jobToStar[r.Job.ID]
+		if !ok {
+			continue
+		}
+
+		if r.Err != nil {
+			mu.Lock()
+			result.Errors++
+			result.ErrorMsgs = append(result.ErrorMsgs, fmt.Sprintf("%s: %v", info.FullName, r.Err))
+			mu.Unlock()
+			fmt.Fprintf(s.out, "  ✗ %s: %v\n", info.FullName, r.Err)
+			continue
+		}
+
+		if info.IsUpdate {
+			mu.Lock()
+			result.Updated++
+			mu.Unlock()
+			fmt.Fprintf(s.out, "  ✓ Updated %s\n", info.FullName)
+		} else {
+			// Update database with local path for new clones
+			if err := s.db.UpdateRepoLocalPath(info.RepoID, info.LocalPath, time.Now()); err != nil {
+				fmt.Fprintf(s.out, "  Warning: failed to update local path for %s: %v\n", info.FullName, err)
+			}
+			mu.Lock()
+			result.Cloned++
+			mu.Unlock()
+			fmt.Fprintf(s.out, "  ✓ Cloned %s\n", info.FullName)
+		}
+
+		// Extract and index after clone/update
+		if err := s.extractor.ExtractAndIndex(ctx, info.RepoID, info.LocalPath); err != nil {
+			fmt.Fprintf(s.out, "  Warning: indexing failed for %s: %v\n", info.FullName, err)
+		}
+	}
 }
 
 func strPtr(s string) *string {

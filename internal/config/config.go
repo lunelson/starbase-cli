@@ -37,6 +37,7 @@ type SyncConfig struct {
 	CloneArchived   bool   `mapstructure:"clone_archived"`
 	MaxReposPerSync int    `mapstructure:"max_repos_per_sync"`
 	ResetOnConflict bool   `mapstructure:"reset_on_conflict"`
+	Concurrency     int    `mapstructure:"concurrency"`
 }
 
 type IndexConfig struct {
@@ -216,6 +217,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("sync.clone_archived", false)
 	v.SetDefault("sync.max_repos_per_sync", 100)
 	v.SetDefault("sync.reset_on_conflict", true)
+	v.SetDefault("sync.concurrency", 4)
 
 	// Index defaults
 	v.SetDefault("index.readme", true)
