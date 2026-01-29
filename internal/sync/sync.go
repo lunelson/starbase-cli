@@ -11,6 +11,7 @@ import (
 	"github.com/lunelson/starbase-cli/internal/database"
 	"github.com/lunelson/starbase-cli/internal/forge"
 	"github.com/lunelson/starbase-cli/internal/git"
+	"github.com/lunelson/starbase-cli/internal/index"
 )
 
 // Options configures sync behavior
@@ -35,23 +36,34 @@ type Result struct {
 
 // Syncer handles synchronization of starred repos
 type Syncer struct {
-	cfg      *config.Config
-	paths    config.Paths
-	db       *database.DB
-	forges   map[string]forge.Forge
-	manifest *config.Manifest
-	out      io.Writer
+	cfg       *config.Config
+	paths     config.Paths
+	db        *database.DB
+	forges    map[string]forge.Forge
+	manifest  *config.Manifest
+	extractor *index.Extractor
+	out       io.Writer
 }
 
 // New creates a new Syncer
 func New(cfg *config.Config, paths config.Paths, db *database.DB, forges map[string]forge.Forge, manifest *config.Manifest, out io.Writer) *Syncer {
+	extractorCfg := index.ExtractorConfig{
+		IndexReadme:     cfg.Index.Readme,
+		HighSignalFiles: cfg.Index.HighSignalFiles,
+		MaxFileSizeKB:   cfg.Index.MaxFileSizeKB,
+	}
+	if len(extractorCfg.HighSignalFiles) == 0 {
+		extractorCfg = index.DefaultExtractorConfig()
+	}
+
 	return &Syncer{
-		cfg:      cfg,
-		paths:    paths,
-		db:       db,
-		forges:   forges,
-		manifest: manifest,
-		out:      out,
+		cfg:       cfg,
+		paths:     paths,
+		db:        db,
+		forges:    forges,
+		manifest:  manifest,
+		extractor: index.NewExtractor(db, extractorCfg),
+		out:       out,
 	}
 }
 
@@ -219,6 +231,13 @@ func (s *Syncer) processStar(ctx context.Context, f forge.Forge, star forge.Star
 			if err := git.Pull(ctx, localPath, s.cfg.Sync.ResetOnConflict); err != nil {
 				return fmt.Errorf("pulling: %w", err)
 			}
+
+			// Re-extract and index after update
+			if err := s.extractor.ExtractAndIndex(ctx, repoID, localPath); err != nil {
+				// Log but don't fail sync
+				fmt.Fprintf(s.out, "  Warning: indexing failed: %v\n", err)
+			}
+
 			result.Updated++
 		}
 	} else if !opts.PullOnly {
@@ -239,6 +258,12 @@ func (s *Syncer) processStar(ctx context.Context, f forge.Forge, star forge.Star
 		// Update database with local path
 		if err := s.db.UpdateRepoLocalPath(repoID, localPath, time.Now()); err != nil {
 			return fmt.Errorf("updating local path: %w", err)
+		}
+
+		// Extract and index after clone
+		if err := s.extractor.ExtractAndIndex(ctx, repoID, localPath); err != nil {
+			// Log but don't fail sync
+			fmt.Fprintf(s.out, "  Warning: indexing failed: %v\n", err)
 		}
 
 		result.Cloned++
