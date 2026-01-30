@@ -7,7 +7,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var version = "dev"
+var (
+	version   = "dev"
+	buildTime = "unknown"
+)
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
@@ -25,5 +28,5 @@ starred repositories, optimized for LLM-assisted development workflows.`,
 }
 
 func init() {
-	rootCmd.SetVersionTemplate("starbase version {{.Version}}\n")
+	rootCmd.SetVersionTemplate(fmt.Sprintf("starbase version {{.Version}} (built %s)\n", buildTime))
 }

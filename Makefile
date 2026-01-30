@@ -2,7 +2,8 @@
 
 BINARY := starbase
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-LDFLAGS := -ldflags "-X main.version=$(VERSION)"
+BUILD_TIME := $(shell date -u +"%Y-%m-%d %H:%M:%S UTC")
+LDFLAGS := -ldflags "-X main.version=$(VERSION) -X 'main.buildTime=$(BUILD_TIME)'"
 
 build:
 	go build $(LDFLAGS) -o bin/$(BINARY) ./cmd/starbase
