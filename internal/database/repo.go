@@ -77,8 +77,8 @@ func (d *DB) InsertRepo(r *Repo) (int64, error) {
 	}
 
 	id, err := result.LastInsertId()
-	if err != nil {
-		// If conflict occurred, fetch the existing ID
+	if err != nil || id == 0 {
+		// If conflict occurred (update not insert), fetch the existing ID
 		row := d.QueryRow("SELECT id FROM repos WHERE forge = ? AND forge_id = ?", r.Forge, r.ForgeID)
 		if err := row.Scan(&id); err != nil {
 			return 0, fmt.Errorf("getting repo id: %w", err)
