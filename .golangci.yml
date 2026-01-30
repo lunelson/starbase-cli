@@ -1,0 +1,30 @@
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  enable:
+    - govet
+    - ineffassign
+    - unused
+    - staticcheck
+    - gosimple
+    - gofmt
+    - goimports
+  disable:
+    - errcheck
+
+linters-settings:
+  govet:
+    disable:
+      - fieldalignment
+      - shadow
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  exclude-rules:
+    - linters:
+        - staticcheck
+      text: "SA9003"

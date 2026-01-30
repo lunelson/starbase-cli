@@ -17,12 +17,12 @@ import (
 
 // Options configures sync behavior
 type Options struct {
-	Full         bool          // Clone all stars, not just recent window
-	MetadataOnly bool          // Skip git operations
-	PullOnly     bool          // Only update existing clones
-	Since        *time.Time    // Override recency window
-	DryRun       bool          // Show plan without executing
-	MaxRepos     int           // Max repos to process
+	Full         bool       // Clone all stars, not just recent window
+	MetadataOnly bool       // Skip git operations
+	PullOnly     bool       // Only update existing clones
+	Since        *time.Time // Override recency window
+	DryRun       bool       // Show plan without executing
+	MaxRepos     int        // Max repos to process
 }
 
 // Result contains sync statistics

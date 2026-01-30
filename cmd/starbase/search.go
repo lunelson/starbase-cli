@@ -26,9 +26,9 @@ Examples:
 }
 
 var (
-	searchLimit  int
-	searchJSON   bool
-	searchYAML   bool
+	searchLimit    int
+	searchJSON     bool
+	searchYAML     bool
 	searchMarkdown bool
 )
 

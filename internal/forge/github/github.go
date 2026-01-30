@@ -228,23 +228,23 @@ type starredRepoResponse struct {
 }
 
 type repoResponse struct {
-	ID            int64    `json:"id"`
-	NodeID        string   `json:"node_id"`
-	Name          string   `json:"name"`
-	FullName      string   `json:"full_name"`
-	Owner         owner    `json:"owner"`
-	Description   string   `json:"description"`
-	Language      string   `json:"language"`
-	Topics        []string `json:"topics"`
-	CloneURL      string   `json:"clone_url"`
-	HTMLURL       string   `json:"html_url"`
-	StargazersCount int    `json:"stargazers_count"`
-	ForksCount    int      `json:"forks_count"`
-	Archived      bool     `json:"archived"`
-	Private       bool     `json:"private"`
-	DefaultBranch string   `json:"default_branch"`
-	Size          int      `json:"size"`
-	PushedAt      string   `json:"pushed_at"`
+	ID              int64    `json:"id"`
+	NodeID          string   `json:"node_id"`
+	Name            string   `json:"name"`
+	FullName        string   `json:"full_name"`
+	Owner           owner    `json:"owner"`
+	Description     string   `json:"description"`
+	Language        string   `json:"language"`
+	Topics          []string `json:"topics"`
+	CloneURL        string   `json:"clone_url"`
+	HTMLURL         string   `json:"html_url"`
+	StargazersCount int      `json:"stargazers_count"`
+	ForksCount      int      `json:"forks_count"`
+	Archived        bool     `json:"archived"`
+	Private         bool     `json:"private"`
+	DefaultBranch   string   `json:"default_branch"`
+	Size            int      `json:"size"`
+	PushedAt        string   `json:"pushed_at"`
 }
 
 type owner struct {

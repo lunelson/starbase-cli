@@ -9,9 +9,9 @@ import (
 )
 
 type Manifest struct {
-	Version     int                `yaml:"version"`
-	Collections []Collection       `yaml:"collections"`
-	Repos       []ManifestRepo     `yaml:"repos"`
+	Version     int            `yaml:"version"`
+	Collections []Collection   `yaml:"collections"`
+	Repos       []ManifestRepo `yaml:"repos"`
 }
 
 type Collection struct {

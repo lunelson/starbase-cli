@@ -1,4 +1,4 @@
-.PHONY: build test lint clean install install-local
+.PHONY: build test lint clean install install-local verify fmt
 
 BINARY := starbase
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -15,6 +15,12 @@ test-short:
 
 lint:
 	golangci-lint run
+
+fmt:
+	$$(go env GOPATH)/bin/goimports -w .
+
+verify:
+	./hack/verify_all.sh
 
 clean:
 	rm -rf bin/

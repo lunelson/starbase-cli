@@ -7,12 +7,12 @@ import (
 
 // Job represents a git operation to perform
 type Job struct {
-	ID       string // unique identifier (e.g., repo full name)
-	Type     JobType
-	URL      string // for clone
-	Path     string // local path
-	Options  CloneOptions
-	Reset    bool // for pull: reset on conflict
+	ID      string // unique identifier (e.g., repo full name)
+	Type    JobType
+	URL     string // for clone
+	Path    string // local path
+	Options CloneOptions
+	Reset   bool // for pull: reset on conflict
 }
 
 // JobType identifies the type of git operation
@@ -26,18 +26,18 @@ const (
 
 // JobResult contains the outcome of a git job
 type JobResult struct {
-	Job   Job
-	Err   error
+	Job Job
+	Err error
 }
 
 // Pool manages concurrent git operations
 type Pool struct {
-	workers    int
-	jobs       chan Job
-	results    chan JobResult
-	wg         sync.WaitGroup
-	ctx        context.Context
-	cancel     context.CancelFunc
+	workers int
+	jobs    chan Job
+	results chan JobResult
+	wg      sync.WaitGroup
+	ctx     context.Context
+	cancel  context.CancelFunc
 }
 
 // PoolConfig configures the worker pool

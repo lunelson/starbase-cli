@@ -21,9 +21,9 @@ var (
 			Background(lipgloss.Color("#25A065")).
 			Padding(0, 1)
 
-	statusStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.AdaptiveColor{Light: "#343433", Dark: "#C1C6B2"}).
-			Background(lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#353533"})
+	_ = lipgloss.NewStyle().
+		Foreground(lipgloss.AdaptiveColor{Light: "#343433", Dark: "#C1C6B2"}).
+		Background(lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#353533"})
 )
 
 // RepoItem implements list.Item for the TUI list

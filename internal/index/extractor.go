@@ -14,9 +14,9 @@ import (
 
 // ExtractorConfig configures document extraction
 type ExtractorConfig struct {
-	IndexReadme      bool
-	HighSignalFiles  []string
-	MaxFileSizeKB    int
+	IndexReadme     bool
+	HighSignalFiles []string
+	MaxFileSizeKB   int
 }
 
 // DefaultExtractorConfig returns default extraction settings

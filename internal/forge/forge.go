@@ -30,8 +30,8 @@ type ListOptions struct {
 // ListResult contains paginated results
 type ListResult struct {
 	Repos      []StarredRepo
-	NextPage   int  // 0 if no more pages
-	TotalCount int  // -1 if unknown
+	NextPage   int // 0 if no more pages
+	TotalCount int // -1 if unknown
 }
 
 // StarredRepo represents a starred repository from a forge

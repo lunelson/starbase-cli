@@ -158,7 +158,7 @@ func TestFindFile(t *testing.T) {
 	}
 
 	// Find case-insensitive
-	content, path, err = FindFile(dir, []string{"readme.md"})
+	content, _, err = FindFile(dir, []string{"readme.md"})
 	if err != nil {
 		t.Fatal(err)
 	}

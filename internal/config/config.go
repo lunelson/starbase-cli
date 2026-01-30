@@ -54,9 +54,9 @@ type SearchConfig struct {
 }
 
 type RankingConfig struct {
-	StarRecencyWeight     float64 `mapstructure:"star_recency_weight"`
-	PushRecencyWeight     float64 `mapstructure:"push_recency_weight"`
-	LanguageMatchWeight   float64 `mapstructure:"language_match_weight"`
+	StarRecencyWeight   float64 `mapstructure:"star_recency_weight"`
+	PushRecencyWeight   float64 `mapstructure:"push_recency_weight"`
+	LanguageMatchWeight float64 `mapstructure:"language_match_weight"`
 }
 
 type ForgesConfig struct {
