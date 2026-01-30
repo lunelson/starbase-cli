@@ -35,9 +35,16 @@ type RepoItem struct {
 	Language  string
 	LocalPath string
 	Stars     int
+	Selected  bool
 }
 
-func (r RepoItem) Title() string       { return r.FullName }
+func (r RepoItem) Title() string {
+	checkbox := "[ ] "
+	if r.Selected {
+		checkbox = "[✓] "
+	}
+	return checkbox + r.FullName
+}
 func (r RepoItem) Description() string { return r.Desc }
 func (r RepoItem) FilterValue() string { return r.FullName + " " + r.Desc }
 
@@ -49,6 +56,7 @@ type Model struct {
 	list        list.Model
 	searchInput textinput.Model
 	searching   bool
+	selected    map[int64]bool // tracks selected repo IDs
 	width       int
 	height      int
 	err         error
@@ -72,6 +80,7 @@ func New(db *database.DB) Model {
 		searcher:    search.New(db.DB),
 		list:        l,
 		searchInput: ti,
+		selected:    make(map[int64]bool),
 	}
 }
 
@@ -192,6 +201,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return searchResultsMsg{items}
 				}
 			}
+
+		case key.Matches(msg, key.NewBinding(key.WithKeys(" "))):
+			// Toggle selection on current item
+			if !m.searching {
+				if item, ok := m.list.SelectedItem().(RepoItem); ok {
+					m.selected[item.ID] = !m.selected[item.ID]
+					m.updateItemSelection()
+				}
+			}
+
+		case key.Matches(msg, key.NewBinding(key.WithKeys("a"))):
+			// Select all
+			if !m.searching {
+				for _, item := range m.list.Items() {
+					if repo, ok := item.(RepoItem); ok {
+						m.selected[repo.ID] = true
+					}
+				}
+				m.updateItemSelection()
+			}
+
+		case key.Matches(msg, key.NewBinding(key.WithKeys("n"))):
+			// Select none (clear selection)
+			if !m.searching {
+				m.selected = make(map[int64]bool)
+				m.updateItemSelection()
+			}
 		}
 
 	case reposLoadedMsg:
@@ -220,6 +256,43 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+// updateItemSelection syncs the Selected field on all items with the selected map
+func (m *Model) updateItemSelection() {
+	items := m.list.Items()
+	updated := make([]list.Item, len(items))
+	for i, item := range items {
+		if repo, ok := item.(RepoItem); ok {
+			repo.Selected = m.selected[repo.ID]
+			updated[i] = repo
+		} else {
+			updated[i] = item
+		}
+	}
+	m.list.SetItems(updated)
+}
+
+// SelectedItems returns all currently selected RepoItems
+func (m Model) SelectedItems() []RepoItem {
+	var result []RepoItem
+	for _, item := range m.list.Items() {
+		if repo, ok := item.(RepoItem); ok && m.selected[repo.ID] {
+			result = append(result, repo)
+		}
+	}
+	return result
+}
+
+// SelectedCount returns the number of selected items
+func (m Model) SelectedCount() int {
+	count := 0
+	for _, v := range m.selected {
+		if v {
+			count++
+		}
+	}
+	return count
+}
+
 // View renders the UI
 func (m Model) View() string {
 	if m.err != nil {
@@ -235,6 +308,11 @@ func (m Model) View() string {
 	}
 
 	s.WriteString(m.list.View())
+
+	// Show selection count if any items selected
+	if count := m.SelectedCount(); count > 0 {
+		s.WriteString(fmt.Sprintf("\n %d selected (a=all, n=none, space=toggle)", count))
+	}
 
 	return appStyle.Render(s.String())
 }
