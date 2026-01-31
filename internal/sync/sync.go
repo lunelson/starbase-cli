@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-	"sync"
 	"time"
 
 	"github.com/lunelson/starbase-cli/internal/config"
@@ -44,6 +43,7 @@ type Syncer struct {
 	manifest  *config.Manifest
 	extractor *index.Extractor
 	out       io.Writer
+	progress  *Progress
 }
 
 // New creates a new Syncer
@@ -65,6 +65,7 @@ func New(cfg *config.Config, paths config.Paths, db *database.DB, forges map[str
 		manifest:  manifest,
 		extractor: index.NewExtractor(db, extractorCfg),
 		out:       out,
+		progress:  NewProgress(out),
 	}
 }
 
@@ -101,8 +102,6 @@ func (s *Syncer) Run(ctx context.Context, opts Options) (*Result, error) {
 		}
 		result.Fetched += len(stars)
 
-		fmt.Fprintf(s.out, "Found %d starred repos\n", len(stars))
-
 		// Process each star: save to DB and prepare git jobs
 		for i, star := range stars {
 			if opts.MaxRepos > 0 && i >= opts.MaxRepos {
@@ -133,8 +132,10 @@ func (s *Syncer) Run(ctx context.Context, opts Options) (*Result, error) {
 
 		fmt.Fprintf(s.out, "\nExecuting %d git operations (%d workers)...\n", len(allJobs), concurrency)
 
-		results := git.RunAll(ctx, allJobs, concurrency)
-		s.processGitResults(ctx, results, jobToStar, result)
+		s.progress.StartGitOps(len(allJobs))
+		resultsCh := git.RunStream(ctx, allJobs, concurrency)
+		s.processGitResultsStream(ctx, resultsCh, jobToStar, result)
+		s.progress.StopGitOps()
 	}
 
 	return result, nil
@@ -150,12 +151,15 @@ func (s *Syncer) fetchAllStars(ctx context.Context, f forge.Forge, since *time.T
 	}
 
 	for {
+		s.progress.FetchPage(opts.Page, len(allStars))
+
 		result, err := f.ListStars(ctx, opts)
 		if err != nil {
 			return nil, err
 		}
 
 		allStars = append(allStars, result.Repos...)
+		s.progress.FetchPageDone(opts.Page, len(result.Repos), len(allStars))
 
 		if result.NextPage == 0 {
 			break
@@ -163,6 +167,7 @@ func (s *Syncer) fetchAllStars(ctx context.Context, f forge.Forge, since *time.T
 		opts.Page = result.NextPage
 	}
 
+	s.progress.FetchComplete(len(allStars))
 	return allStars, nil
 }
 
@@ -294,44 +299,43 @@ func (s *Syncer) prepareStar(ctx context.Context, f forge.Forge, star forge.Star
 	return nil, starInfo{}, nil
 }
 
-// processGitResults handles completed git jobs
-func (s *Syncer) processGitResults(ctx context.Context, results []git.JobResult, jobToStar map[string]starInfo, result *Result) {
-	var mu sync.Mutex
-
-	for _, r := range results {
+// processGitResultsStream handles completed git jobs as they arrive
+func (s *Syncer) processGitResultsStream(ctx context.Context, results <-chan git.JobResult, jobToStar map[string]starInfo, result *Result) {
+	for r := range results {
 		info, ok := jobToStar[r.Job.ID]
 		if !ok {
 			continue
 		}
 
+		success := r.Err == nil
+		s.progress.UpdateGitOp(info.FullName, success)
+
 		if r.Err != nil {
-			mu.Lock()
 			result.Errors++
 			result.ErrorMsgs = append(result.ErrorMsgs, fmt.Sprintf("%s: %v", info.FullName, r.Err))
-			mu.Unlock()
-			fmt.Fprintf(s.out, "  ✗ %s: %v\n", info.FullName, r.Err)
+			if !s.progress.IsTTY() {
+				fmt.Fprintf(s.out, "  ✗ %s: %v\n", info.FullName, r.Err)
+			}
 			continue
 		}
 
 		if info.IsUpdate {
-			mu.Lock()
 			result.Updated++
-			mu.Unlock()
-			fmt.Fprintf(s.out, "  ✓ Updated %s\n", info.FullName)
 		} else {
 			// Update database with local path for new clones
 			if err := s.db.UpdateRepoLocalPath(info.RepoID, info.LocalPath, time.Now()); err != nil {
-				fmt.Fprintf(s.out, "  Warning: failed to update local path for %s: %v\n", info.FullName, err)
+				if !s.progress.IsTTY() {
+					fmt.Fprintf(s.out, "  Warning: failed to update local path for %s: %v\n", info.FullName, err)
+				}
 			}
-			mu.Lock()
 			result.Cloned++
-			mu.Unlock()
-			fmt.Fprintf(s.out, "  ✓ Cloned %s\n", info.FullName)
 		}
 
 		// Extract and index after clone/update
 		if err := s.extractor.ExtractAndIndex(ctx, info.RepoID, info.LocalPath); err != nil {
-			fmt.Fprintf(s.out, "  Warning: indexing failed for %s: %v\n", info.FullName, err)
+			if !s.progress.IsTTY() {
+				fmt.Fprintf(s.out, "  Warning: indexing failed for %s: %v\n", info.FullName, err)
+			}
 		}
 	}
 }

@@ -155,27 +155,45 @@ func RunAll(ctx context.Context, jobs []Job, workers int) []JobResult {
 		return nil
 	}
 
+	results := make([]JobResult, 0, len(jobs))
+	for result := range RunStream(ctx, jobs, workers) {
+		results = append(results, result)
+	}
+	return results
+}
+
+// RunStream executes jobs and returns results as they complete.
+// The returned channel is closed when all jobs finish.
+func RunStream(ctx context.Context, jobs []Job, workers int) <-chan JobResult {
+	out := make(chan JobResult)
+
+	if len(jobs) == 0 {
+		close(out)
+		return out
+	}
+
 	pool := NewPool(PoolConfig{Workers: workers})
 	pool.Start(ctx)
 
-	// Submit all jobs in background
+	// Submit all jobs then close input
 	go func() {
 		for _, job := range jobs {
 			pool.Submit(job)
 		}
+		pool.Close()
 	}()
 
-	// Collect results (we know exactly how many to expect)
-	results := make([]JobResult, 0, len(jobs))
-	for i := 0; i < len(jobs); i++ {
-		select {
-		case result := <-pool.results:
-			results = append(results, result)
-		case <-ctx.Done():
-			pool.Cancel()
-			return results
+	// Forward results until pool closes
+	go func() {
+		defer close(out)
+		for r := range pool.Results() {
+			select {
+			case out <- r:
+			case <-ctx.Done():
+				return
+			}
 		}
-	}
+	}()
 
-	return results
+	return out
 }
