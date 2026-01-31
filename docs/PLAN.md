@@ -98,16 +98,19 @@ The manifest approach syncs across machines (via dotfiles), while DB is local-on
 
 ### Implementation Steps
 
-| Step | Task |
-|------|------|
-| 1 | Add URL parser utility (`internal/forge/urlparser.go`) |
-| 2 | Update repo ID format in database schema |
-| 3 | Migrate existing repos to new ID format |
-| 4 | Update `add` command to accept URLs |
-| 5 | Update `rm` command with `--delete` and `--unstar` flags |
-| 6 | Add tombstones field to manifest |
-| 7 | Update sync to respect tombstones |
-| 8 | Add `rm` interactive mode (multiselect when no arg)
+| Step | Task | Status |
+|------|------|--------|
+| 1 | Add URL parser utility (`internal/forge/urlparser.go`) | ✅ |
+| 2 | Update repo ID format in database schema | ⏳ (deferred) |
+| 3 | Migrate existing repos to new ID format | ⏳ (deferred) |
+| 4 | Update `add` command to accept URLs | ✅ |
+| 5 | Update `rm` command with `--delete` and `--unstar` flags | ✅ |
+| 6 | Add tombstones field to manifest | ✅ |
+| 7 | Update sync to respect tombstones | ✅ |
+| 8 | Add `rm` interactive mode (multiselect when no arg) | TODO |
+
+**Notes:**
+- Steps 2-3 (DB schema migration) deferred: tombstones use `host:owner/repo` format but DB still uses ForgeID for compatibility. A migration to fully replace ForgeID can be done later if needed.
 
 ---
 
