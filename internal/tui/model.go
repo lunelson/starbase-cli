@@ -329,18 +329,21 @@ func (m *Model) handleListKeys(msg tea.KeyMsg) tea.Cmd {
 		m.updateItemSelection()
 
 	case key.Matches(msg, m.keys.OpenEditor):
-		if item, ok := m.list.SelectedItem().(RepoItem); ok {
-			return m.openInEditor(item)
+		repos := m.getActionTargets()
+		if len(repos) > 0 {
+			return m.openInEditorBatch(repos)
 		}
 
 	case key.Matches(msg, m.keys.OpenWeb):
-		if item, ok := m.list.SelectedItem().(RepoItem); ok {
-			return m.openInBrowser(item)
+		repos := m.getActionTargets()
+		if len(repos) > 0 {
+			return m.openInBrowserBatch(repos)
 		}
 
 	case key.Matches(msg, m.keys.CopyPath):
-		if item, ok := m.list.SelectedItem().(RepoItem); ok {
-			return m.copyPath(item)
+		repos := m.getActionTargets()
+		if len(repos) > 0 {
+			return m.copyPathBatch(repos)
 		}
 	}
 
@@ -423,6 +426,113 @@ func (m *Model) loadDetail() tea.Msg {
 	}
 
 	return detailLoadedMsg{readme: readme}
+}
+
+// getActionTargets returns selected items if any are selected, otherwise the cursor item
+func (m *Model) getActionTargets() []RepoItem {
+	selected := m.SelectedItems()
+	if len(selected) > 0 {
+		return selected
+	}
+	if item, ok := m.list.SelectedItem().(RepoItem); ok {
+		return []RepoItem{item}
+	}
+	return nil
+}
+
+func (m *Model) openInEditorBatch(repos []RepoItem) tea.Cmd {
+	return func() tea.Msg {
+		editor := os.Getenv("EDITOR")
+		if editor == "" {
+			editor = "code"
+		}
+
+		var paths []string
+		for _, repo := range repos {
+			if repo.LocalPath != "" {
+				paths = append(paths, repo.LocalPath)
+			}
+		}
+
+		if len(paths) == 0 {
+			return statusMsg{text: "No local paths - clone first"}
+		}
+
+		args := paths
+		cmd := exec.Command(editor, args...)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		if err := cmd.Run(); err != nil {
+			return statusMsg{text: fmt.Sprintf("Editor error: %v", err)}
+		}
+
+		if len(paths) == 1 {
+			return statusMsg{text: fmt.Sprintf("Opened %s", repos[0].FullName)}
+		}
+		return statusMsg{text: fmt.Sprintf("Opened %d repos", len(paths))}
+	}
+}
+
+func (m *Model) openInBrowserBatch(repos []RepoItem) tea.Cmd {
+	return func() tea.Msg {
+		opened := 0
+		for _, repo := range repos {
+			if repo.WebURL == "" {
+				continue
+			}
+
+			var cmd *exec.Cmd
+			switch runtime.GOOS {
+			case "darwin":
+				cmd = exec.Command("open", repo.WebURL)
+			case "linux":
+				cmd = exec.Command("xdg-open", repo.WebURL)
+			case "windows":
+				cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", repo.WebURL)
+			default:
+				continue
+			}
+
+			if err := cmd.Start(); err == nil {
+				opened++
+			}
+		}
+
+		if opened == 0 {
+			return statusMsg{text: "No URLs to open"}
+		}
+		if opened == 1 {
+			return statusMsg{text: fmt.Sprintf("Opened %s in browser", repos[0].FullName)}
+		}
+		return statusMsg{text: fmt.Sprintf("Opened %d repos in browser", opened)}
+	}
+}
+
+func (m *Model) copyPathBatch(repos []RepoItem) tea.Cmd {
+	return func() tea.Msg {
+		var paths []string
+		for _, repo := range repos {
+			if repo.LocalPath != "" {
+				paths = append(paths, repo.LocalPath)
+			}
+		}
+
+		if len(paths) == 0 {
+			return statusMsg{text: "No local paths - clone first"}
+		}
+
+		text := strings.Join(paths, "\n")
+		if err := clipboard.WriteAll(text); err != nil {
+			return statusMsg{text: fmt.Sprintf("Clipboard error: %v", err)}
+		}
+
+		if len(paths) == 1 {
+			return statusMsg{text: fmt.Sprintf("Copied: %s", paths[0])}
+		}
+		return statusMsg{text: fmt.Sprintf("Copied %d paths", len(paths))}
+	}
 }
 
 func (m *Model) openInEditor(repo RepoItem) tea.Cmd {
