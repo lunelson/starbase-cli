@@ -46,9 +46,15 @@ func Clone(ctx context.Context, url, destPath string, opts CloneOptions) error {
 
 	cmd := exec.CommandContext(ctx, "git", args...)
 
-	// Skip LFS by setting environment variable
+	// Skip LFS by setting environment variables and config
 	if opts.SkipLFS {
-		cmd.Env = append(os.Environ(), "GIT_LFS_SKIP_SMUDGE=1")
+		cmd.Env = append(os.Environ(),
+			"GIT_LFS_SKIP_SMUDGE=1",
+			"GIT_LFS_SKIP_PUSH=1",
+		)
+		// Add config to skip LFS filter during checkout
+		args = append([]string{"-c", "filter.lfs.smudge=", "-c", "filter.lfs.process=", "-c", "filter.lfs.required=false"}, args...)
+		cmd.Args = append([]string{"git"}, args...)
 	}
 
 	var stderr bytes.Buffer
