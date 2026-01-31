@@ -215,7 +215,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("sync.clone_missing", true)
 	v.SetDefault("sync.clone_private", false)
 	v.SetDefault("sync.clone_archived", false)
-	v.SetDefault("sync.max_repos_per_sync", 100)
+	v.SetDefault("sync.max_repos_per_sync", 0) // 0 = no limit
 	v.SetDefault("sync.reset_on_conflict", true)
 	v.SetDefault("sync.concurrency", 4)
 
