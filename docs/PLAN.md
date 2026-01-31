@@ -16,8 +16,98 @@
 - ✅ Phase 5.5: Help overlay (? shows keybindings)
 - ✅ Phase 7.3: repo add/remove commands
 - ✅ Phase 8.1: Prune command
+- ✅ Sync progress feedback (streaming results, spinner, pagination progress)
+- ✅ Dev build header with timestamp
+- ✅ Top-level `add` and `rm` commands with GitHub star/unstar API
 
 **All tests passing.** Binary builds successfully.
+
+---
+
+## Next Up: Repository Identity & Command Redesign
+
+### Design Goals (from clones-cli patterns)
+
+Reference project: `~/Code/lunelson/clones-cli` (TypeScript predecessor)
+
+#### 1. Multi-Forge Repository ID Format
+
+Current: Uses GitHub's `ForgeID` (node ID like `R_kgDOABC123`)
+
+**Proposed:** `host:owner/repo` format
+- `github.com:charmbracelet/bubbletea`
+- `gitlab.com:some-org/some-repo`
+- `git.company.com:team/internal-tool`
+
+This enables:
+- Multiple forges without ID collision
+- Human-readable identifiers
+- Easy parsing and display
+
+#### 2. Flexible URL Input for `add` Command
+
+Accept multiple URL formats, normalize to extract `host/owner/repo`:
+
+| Input Format | Example |
+|--------------|---------|
+| HTTPS URL | `https://github.com/owner/repo` |
+| SSH URL | `git@github.com:owner/repo.git` |
+| Web UI URL | `https://github.com/owner/repo/tree/main/src/file.ts` |
+| Short form | `owner/repo` (assumes github.com) |
+
+**Normalization approach:**
+1. Parse as URL object (strips anchors, query params)
+2. Extract path segments: first = owner, second = repo
+3. Generate canonical clone URL
+
+#### 3. `rm` Command Semantics
+
+Four-way matrix of options:
+
+| Action | Flag | Description |
+|--------|------|-------------|
+| Remove from DB | (default) | Always happens |
+| Delete local clone | `--delete` or `-d` | Remove files from disk |
+| Keep starred on GitHub | (default) | Star relationship preserved |
+| Unstar on GitHub | `--unstar` | Remove star via API |
+
+Examples:
+```bash
+starbase rm owner/repo              # Remove from DB only, keep files + star
+starbase rm owner/repo --delete     # Remove from DB + delete files, keep star
+starbase rm owner/repo --unstar     # Remove from DB + unstar, keep files
+starbase rm owner/repo -d --unstar  # Full removal: DB, files, and star
+```
+
+#### 4. Tombstones Mechanism
+
+**Purpose:** Prevent re-syncing of intentionally removed repos.
+
+When a repo is removed via `rm`:
+1. Add its ID to a tombstones list (in manifest or DB)
+2. During `sync`, skip any starred repo whose ID is in tombstones
+3. Only way to un-tombstone: explicit `add` command
+
+**Storage options:**
+- Manifest YAML: `tombstones: ["github.com:owner/repo", ...]`
+- Database table: `tombstones (id TEXT PRIMARY KEY, tombstoned_at DATETIME)`
+
+The manifest approach syncs across machines (via dotfiles), while DB is local-only.
+
+**Recommendation:** Store in manifest for cross-machine sync.
+
+### Implementation Steps
+
+| Step | Task |
+|------|------|
+| 1 | Add URL parser utility (`internal/forge/urlparser.go`) |
+| 2 | Update repo ID format in database schema |
+| 3 | Migrate existing repos to new ID format |
+| 4 | Update `add` command to accept URLs |
+| 5 | Update `rm` command with `--delete` and `--unstar` flags |
+| 6 | Add tombstones field to manifest |
+| 7 | Update sync to respect tombstones |
+| 8 | Add `rm` interactive mode (multiselect when no arg)
 
 ---
 
