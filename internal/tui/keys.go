@@ -4,19 +4,22 @@ import "github.com/charmbracelet/bubbles/key"
 
 // keyMap defines all key bindings with help text
 type keyMap struct {
-	Up         key.Binding
-	Down       key.Binding
-	Select     key.Binding
-	SelectAll  key.Binding
-	SelectNone key.Binding
-	Search     key.Binding
-	Enter      key.Binding
-	Back       key.Binding
-	Help       key.Binding
-	Quit       key.Binding
-	OpenEditor key.Binding
-	OpenWeb    key.Binding
-	CopyPath   key.Binding
+	Up           key.Binding
+	Down         key.Binding
+	Select       key.Binding
+	SelectAll    key.Binding
+	SelectNone   key.Binding
+	Search       key.Binding
+	FilterLang   key.Binding
+	FilterTopic  key.Binding
+	ClearFilters key.Binding
+	Enter        key.Binding
+	Back         key.Binding
+	Help         key.Binding
+	Quit         key.Binding
+	OpenEditor   key.Binding
+	OpenWeb      key.Binding
+	CopyPath     key.Binding
 }
 
 // defaultKeyMap returns the default key bindings
@@ -45,6 +48,18 @@ func defaultKeyMap() keyMap {
 		Search: key.NewBinding(
 			key.WithKeys("/"),
 			key.WithHelp("/", "search"),
+		),
+		FilterLang: key.NewBinding(
+			key.WithKeys("l"),
+			key.WithHelp("l", "filter by language"),
+		),
+		FilterTopic: key.NewBinding(
+			key.WithKeys("t"),
+			key.WithHelp("t", "filter by topic"),
+		),
+		ClearFilters: key.NewBinding(
+			key.WithKeys("c"),
+			key.WithHelp("c", "clear filters"),
 		),
 		Enter: key.NewBinding(
 			key.WithKeys("enter"),
@@ -86,8 +101,8 @@ func (k keyMap) ShortHelp() []key.Binding {
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Select, k.SelectAll, k.SelectNone},
-		{k.Search, k.Enter, k.Back},
-		{k.OpenEditor, k.OpenWeb, k.CopyPath},
+		{k.Search, k.FilterLang, k.FilterTopic, k.ClearFilters},
+		{k.Enter, k.Back, k.OpenEditor, k.OpenWeb, k.CopyPath},
 		{k.Help, k.Quit},
 	}
 }

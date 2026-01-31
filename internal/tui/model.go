@@ -27,6 +27,7 @@ const (
 	searchView
 	detailView
 	helpView
+	filterView
 )
 
 // RepoItem implements list.Item for the TUI list
@@ -75,6 +76,12 @@ type Model struct {
 	detailViewport viewport.Model
 	detailContent  string
 
+	// Filters
+	filterType  string // "language" or "topic"
+	filterValue string
+	filterList  list.Model
+	allItems    []list.Item // unfiltered items
+
 	// Dimensions
 	width  int
 	height int
@@ -99,6 +106,12 @@ func New(db *database.DB) Model {
 
 	vp := viewport.New(0, 0)
 
+	filterDelegate := list.NewDefaultDelegate()
+	fl := list.New([]list.Item{}, filterDelegate, 0, 0)
+	fl.SetShowStatusBar(false)
+	fl.SetFilteringEnabled(true)
+	fl.SetShowHelp(false)
+
 	return Model{
 		db:             db,
 		searcher:       search.New(db.DB),
@@ -108,6 +121,7 @@ func New(db *database.DB) Model {
 		searchInput:    ti,
 		selected:       make(map[int64]bool),
 		detailViewport: vp,
+		filterList:     fl,
 	}
 }
 
@@ -197,6 +211,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case reposLoadedMsg:
+		m.allItems = msg.items
 		m.list.SetItems(msg.items)
 
 	case searchResultsMsg:
@@ -227,6 +242,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case detailView:
 		var cmd tea.Cmd
 		m.detailViewport, cmd = m.detailViewport.Update(msg)
+		cmds = append(cmds, cmd)
+	case filterView:
+		var cmd tea.Cmd
+		m.filterList, cmd = m.filterList.Update(msg)
 		cmds = append(cmds, cmd)
 	case listView:
 		var cmd tea.Cmd
@@ -291,6 +310,8 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 		return m.handleSearchKeys(msg)
 	case detailView:
 		return m.handleDetailKeys(msg)
+	case filterView:
+		return m.handleFilterKeys(msg)
 	}
 
 	return nil
@@ -345,9 +366,104 @@ func (m *Model) handleListKeys(msg tea.KeyMsg) tea.Cmd {
 		if len(repos) > 0 {
 			return m.copyPathBatch(repos)
 		}
+
+	case key.Matches(msg, m.keys.FilterLang):
+		return m.showFilterOptions("language")
+
+	case key.Matches(msg, m.keys.FilterTopic):
+		return m.showFilterOptions("topic")
+
+	case key.Matches(msg, m.keys.ClearFilters):
+		m.filterType = ""
+		m.filterValue = ""
+		m.list.SetItems(m.allItems)
+		m.statusText = "Filters cleared"
 	}
 
 	return nil
+}
+
+func (m *Model) showFilterOptions(filterType string) tea.Cmd {
+	m.filterType = filterType
+
+	// Collect unique values
+	values := make(map[string]int)
+	for _, item := range m.allItems {
+		if repo, ok := item.(RepoItem); ok {
+			if filterType == "language" && repo.Language != "" {
+				values[repo.Language]++
+			} else if filterType == "topic" {
+				for _, topic := range repo.Topics {
+					values[topic]++
+				}
+			}
+		}
+	}
+
+	if len(values) == 0 {
+		m.statusText = "No " + filterType + "s available"
+		return nil
+	}
+
+	// Build filter list items
+	var items []list.Item
+	for val, count := range values {
+		items = append(items, filterItem{value: val, count: count})
+	}
+
+	m.filterList.SetItems(items)
+	h, v := appStyle.GetFrameSize()
+	m.filterList.SetSize(m.width-h, m.height-v-4)
+	m.filterList.Title = "Filter by " + filterType
+	m.state = filterView
+
+	return nil
+}
+
+type filterItem struct {
+	value string
+	count int
+}
+
+func (f filterItem) Title() string       { return f.value }
+func (f filterItem) Description() string { return fmt.Sprintf("%d repos", f.count) }
+func (f filterItem) FilterValue() string { return f.value }
+
+func (m *Model) handleFilterKeys(msg tea.KeyMsg) tea.Cmd {
+	switch {
+	case key.Matches(msg, m.keys.Enter):
+		if item, ok := m.filterList.SelectedItem().(filterItem); ok {
+			m.filterValue = item.value
+			m.applyFilter()
+			m.state = listView
+		}
+
+	case key.Matches(msg, m.keys.Back):
+		m.state = listView
+		m.filterType = ""
+	}
+
+	return nil
+}
+
+func (m *Model) applyFilter() {
+	var filtered []list.Item
+	for _, item := range m.allItems {
+		if repo, ok := item.(RepoItem); ok {
+			if m.filterType == "language" && repo.Language == m.filterValue {
+				filtered = append(filtered, item)
+			} else if m.filterType == "topic" {
+				for _, topic := range repo.Topics {
+					if topic == m.filterValue {
+						filtered = append(filtered, item)
+						break
+					}
+				}
+			}
+		}
+	}
+	m.list.SetItems(filtered)
+	m.statusText = fmt.Sprintf("Filtered: %s = %s (%d)", m.filterType, m.filterValue, len(filtered))
 }
 
 func (m *Model) handleSearchKeys(msg tea.KeyMsg) tea.Cmd {
@@ -721,6 +837,8 @@ func (m Model) View() string {
 		content = m.viewDetail()
 	case helpView:
 		content = m.viewHelp()
+	case filterView:
+		content = m.viewFilter()
 	}
 
 	return appStyle.Render(content)
@@ -750,6 +868,14 @@ func (m Model) viewSearch() string {
 	s.WriteString(m.searchInput.View())
 	s.WriteString("\n\n")
 	s.WriteString(m.list.View())
+	return s.String()
+}
+
+func (m Model) viewFilter() string {
+	var s strings.Builder
+	s.WriteString(m.filterList.View())
+	s.WriteString("\n")
+	s.WriteString(statusStyle.Render("enter select • esc back"))
 	return s.String()
 }
 
