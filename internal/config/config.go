@@ -169,8 +169,33 @@ func expandHome(path string) string {
 	return path
 }
 
+// ValidationResult contains config validation warnings
+type ValidationResult struct {
+	Warnings []string
+}
+
+// validKeys lists all known top-level config keys
+var validKeys = map[string]bool{
+	"version":  true,
+	"data_dir": true,
+	"clone":    true,
+	"sync":     true,
+	"index":    true,
+	"search":   true,
+	"ranking":  true,
+	"forges":   true,
+	"export":   true,
+	"prune":    true,
+}
+
 // Load reads the config from file and environment
 func Load(configDir string) (*Config, error) {
+	cfg, _, err := LoadWithValidation(configDir)
+	return cfg, err
+}
+
+// LoadWithValidation reads the config and returns validation warnings
+func LoadWithValidation(configDir string) (*Config, *ValidationResult, error) {
 	v := viper.New()
 
 	// Set defaults
@@ -188,16 +213,79 @@ func Load(configDir string) (*Config, error) {
 	// Read config file (optional - use defaults if missing)
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			return nil, fmt.Errorf("reading config: %w", err)
+			return nil, nil, fmt.Errorf("reading config: %w", err)
 		}
 	}
 
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
-		return nil, fmt.Errorf("parsing config: %w", err)
+		return nil, nil, fmt.Errorf("parsing config: %w", err)
 	}
 
-	return &cfg, nil
+	result := validateConfig(v, &cfg)
+
+	return &cfg, result, nil
+}
+
+func validateConfig(v *viper.Viper, cfg *Config) *ValidationResult {
+	result := &ValidationResult{}
+
+	// Check for unknown top-level keys
+	for _, key := range v.AllKeys() {
+		topKey := key
+		if idx := indexOf(key, '.'); idx > 0 {
+			topKey = key[:idx]
+		}
+		if !validKeys[topKey] {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("unknown config key: %s", topKey))
+		}
+	}
+
+	// Validate data_dir is writable (if specified and not default)
+	if cfg.DataDir != "" && cfg.DataDir != "~/.local/share/starbase" {
+		expanded := expandHome(cfg.DataDir)
+		if info, err := os.Stat(expanded); err == nil {
+			if !info.IsDir() {
+				result.Warnings = append(result.Warnings, fmt.Sprintf("data_dir is not a directory: %s", cfg.DataDir))
+			}
+		}
+		// Not warning if directory doesn't exist - it will be created
+	}
+
+	// Validate sync window format
+	if cfg.Sync.DefaultWindow != "" {
+		if _, err := parseDuration(cfg.Sync.DefaultWindow); err != nil {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("invalid sync.default_window: %s", cfg.Sync.DefaultWindow))
+		}
+	}
+
+	// Validate search engine
+	validEngines := map[string]bool{"bm25": true, "hybrid": true}
+	if cfg.Search.Engine != "" && !validEngines[cfg.Search.Engine] {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("unknown search.engine: %s (valid: bm25, hybrid)", cfg.Search.Engine))
+	}
+
+	// Validate export format
+	validFormats := map[string]bool{"paths": true, "json": true, "markdown": true}
+	if cfg.Export.DefaultFormat != "" && !validFormats[cfg.Export.DefaultFormat] {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("unknown export.default_format: %s", cfg.Export.DefaultFormat))
+	}
+
+	// Validate concurrency
+	if cfg.Sync.Concurrency < 0 {
+		result.Warnings = append(result.Warnings, "sync.concurrency cannot be negative")
+	}
+
+	return result
+}
+
+func indexOf(s string, c byte) int {
+	for i := 0; i < len(s); i++ {
+		if s[i] == c {
+			return i
+		}
+	}
+	return -1
 }
 
 func setDefaults(v *viper.Viper) {
