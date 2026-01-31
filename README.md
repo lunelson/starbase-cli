@@ -12,6 +12,15 @@ Stars are a curation signal that typically becomes an unmanageable inbox. **star
 - **LLM-optimized exports** — paths, markdown, workspaces for feeding to coding agents
 - **Multi-machine sync** — config/manifest via dotfiles; database/clones are derived state
 
+## Prerequisites
+
+| Dependency | Required | Notes |
+|------------|----------|-------|
+| Go 1.21+ | For building from source | Not needed if using pre-built binaries |
+| git | **Yes** | Core functionality |
+| git-lfs | Recommended | For repos with large files |
+| gh CLI | Optional | For automatic token discovery; or use `GITHUB_TOKEN`/`STARBASE_GITHUB_TOKEN` env var |
+
 ## Installation
 
 ```bash

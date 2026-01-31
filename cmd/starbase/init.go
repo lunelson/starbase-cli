@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 
 	"github.com/lunelson/starbase-cli/internal/config"
 	"github.com/lunelson/starbase-cli/internal/database"
@@ -21,7 +22,26 @@ func init() {
 	rootCmd.AddCommand(initCmd)
 }
 
+func checkDependencies(cmd *cobra.Command) error {
+	if _, err := exec.LookPath("git"); err != nil {
+		return fmt.Errorf("git is required but not found in PATH")
+	}
+
+	if err := exec.Command("git", "--version").Run(); err != nil {
+		return fmt.Errorf("git is installed but not working: %w", err)
+	}
+
+	if err := exec.Command("git", "lfs", "version").Run(); err != nil {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Warning: git-lfs not found. Some repositories with large files may fail to clone. Install with: brew install git-lfs (macOS) or apt install git-lfs (Linux)")
+	}
+
+	return nil
+}
+
 func runInit(cmd *cobra.Command, args []string) error {
+	if err := checkDependencies(cmd); err != nil {
+		return err
+	}
 	configDir := config.DefaultConfigDir()
 	cfg, err := config.Load(configDir)
 	if err != nil {

@@ -131,6 +131,25 @@ func runSync(cmd *cobra.Command, args []string) error {
 	fmt.Fprintf(cmd.OutOrStdout(), "  Updated: %d\n", result.Updated)
 	fmt.Fprintf(cmd.OutOrStdout(), "  Skipped: %d\n", result.Skipped)
 
+	if len(result.SkipReasons) > 0 {
+		fmt.Fprintf(cmd.OutOrStdout(), "Skipped:\n")
+		reasonLabels := map[string]string{
+			"tombstoned":     "tombstoned",
+			"private":        "clone_private=false",
+			"archived":       "clone_archived=false",
+			"metadata_only":  "--metadata-only",
+			"pull_only":      "--pull-only (not cloned)",
+			"clone_disabled": "clone_missing=false",
+		}
+		for reason, repos := range result.SkipReasons {
+			label := reasonLabels[reason]
+			if label == "" {
+				label = reason
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "  %d %s\n", len(repos), label)
+		}
+	}
+
 	if result.Errors > 0 {
 		fmt.Fprintf(cmd.OutOrStdout(), "  Errors:  %d\n", result.Errors)
 		for _, msg := range result.ErrorMsgs {

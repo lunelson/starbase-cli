@@ -26,12 +26,13 @@ type Options struct {
 
 // Result contains sync statistics
 type Result struct {
-	Fetched   int
-	Cloned    int
-	Updated   int
-	Skipped   int
-	Errors    int
-	ErrorMsgs []string
+	Fetched     int
+	Cloned      int
+	Updated     int
+	Skipped     int
+	Errors      int
+	ErrorMsgs   []string
+	SkipReasons map[string][]string // reason -> list of repo names
 }
 
 // Syncer handles synchronization of starred repos
@@ -71,7 +72,9 @@ func New(cfg *config.Config, paths config.Paths, db *database.DB, forges map[str
 
 // Run executes the sync operation
 func (s *Syncer) Run(ctx context.Context, opts Options) (*Result, error) {
-	result := &Result{}
+	result := &Result{
+		SkipReasons: make(map[string][]string),
+	}
 
 	// Determine time window
 	var since *time.Time
@@ -188,6 +191,7 @@ func (s *Syncer) prepareStar(ctx context.Context, f forge.Forge, star forge.Star
 		tombstoneID := fmt.Sprintf("%s:%s", forge.HostFromForge(forgeName), star.FullName)
 		if s.manifest.IsTombstoned(tombstoneID) {
 			result.Skipped++
+			result.SkipReasons["tombstoned"] = append(result.SkipReasons["tombstoned"], star.FullName)
 			return nil, starInfo{}, nil
 		}
 	}
@@ -243,18 +247,21 @@ func (s *Syncer) prepareStar(ctx context.Context, f forge.Forge, star forge.Star
 	// Skip git operations if metadata-only
 	if opts.MetadataOnly {
 		result.Skipped++
+		result.SkipReasons["metadata_only"] = append(result.SkipReasons["metadata_only"], star.FullName)
 		return nil, starInfo{}, nil
 	}
 
 	// Skip private repos if configured
 	if star.IsPrivate && !s.cfg.Sync.ClonePrivate {
 		result.Skipped++
+		result.SkipReasons["private"] = append(result.SkipReasons["private"], star.FullName)
 		return nil, starInfo{}, nil
 	}
 
 	// Skip archived repos if configured
 	if star.IsArchived && !s.cfg.Sync.CloneArchived {
 		result.Skipped++
+		result.SkipReasons["archived"] = append(result.SkipReasons["archived"], star.FullName)
 		return nil, starInfo{}, nil
 	}
 
@@ -310,11 +317,13 @@ func (s *Syncer) prepareStar(ctx context.Context, f forge.Forge, star forge.Star
 	// Not cloned yet - clone if configured and not pull-only
 	if opts.PullOnly {
 		result.Skipped++
+		result.SkipReasons["pull_only"] = append(result.SkipReasons["pull_only"], star.FullName)
 		return nil, starInfo{}, nil
 	}
 
 	if !s.cfg.Sync.CloneMissing {
 		result.Skipped++
+		result.SkipReasons["clone_disabled"] = append(result.SkipReasons["clone_disabled"], star.FullName)
 		return nil, starInfo{}, nil
 	}
 

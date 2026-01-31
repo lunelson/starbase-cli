@@ -1,63 +1,41 @@
-# Binaries
+# Build output
 bin/
+
+# Binaries
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
 
-# Test binary
+# Test binaries
 *.test
 
-# Output of go coverage
+# Coverage and profiling
 *.out
-coverage.html
+*.coverprofile
+coverage.*
+profile.cov
 
 # Go workspace
 go.work
+go.work.sum
 
-# IDE
+# Dependencies (uncomment to vendor)
+# vendor/
+
+# Environment
+.env
+
+# IDE / Editors
 .idea/
 .vscode/
 *.swp
 *.swo
 
-# OS
+# OS generated
 .DS_Store
 Thumbs.db
 
-# Local data (for development testing)
+# Local development data
 .starbase/
-
-# If you prefer the allow list template instead of the deny list, see community template:
-# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
-#
-# Binaries for programs and plugins
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-
-# Test binary, built with `go test -c`
-*.test
-
-# Code coverage profiles and other test artifacts
-*.out
-coverage.*
-*.coverprofile
-profile.cov
-
-# Dependency directories (remove the comment below to include it)
-# vendor/
-
-# Go workspace file
-go.work
-go.work.sum
-
-# env file
-.env
-
-# Editor/IDE
-# .idea/
-# .vscode/
