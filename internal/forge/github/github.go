@@ -220,6 +220,86 @@ func (c *Client) GetReadme(ctx context.Context, owner, name string) (string, err
 	return readme.Content, nil
 }
 
+// IsStarred checks if the authenticated user has starred a repo
+func (c *Client) IsStarred(ctx context.Context, owner, name string) (bool, error) {
+	url := fmt.Sprintf("%s/user/starred/%s/%s", c.baseURL, owner, name)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return false, fmt.Errorf("creating request: %w", err)
+	}
+
+	c.setHeaders(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("executing request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 204 = starred, 404 = not starred
+	if resp.StatusCode == http.StatusNoContent {
+		return true, nil
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return false, nil
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	return false, fmt.Errorf("API error: %s - %s", resp.Status, string(body))
+}
+
+// Star stars a repository for the authenticated user
+func (c *Client) Star(ctx context.Context, owner, name string) error {
+	url := fmt.Sprintf("%s/user/starred/%s/%s", c.baseURL, owner, name)
+
+	req, err := http.NewRequestWithContext(ctx, "PUT", url, nil)
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+
+	c.setHeaders(req)
+	req.Header.Set("Content-Length", "0")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("executing request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API error: %s - %s", resp.Status, string(body))
+	}
+
+	return nil
+}
+
+// Unstar removes a star from a repository for the authenticated user
+func (c *Client) Unstar(ctx context.Context, owner, name string) error {
+	url := fmt.Sprintf("%s/user/starred/%s/%s", c.baseURL, owner, name)
+
+	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+
+	c.setHeaders(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("executing request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API error: %s - %s", resp.Status, string(body))
+	}
+
+	return nil
+}
+
 func (c *Client) setHeaders(req *http.Request) {
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("User-Agent", userAgent)
