@@ -26,6 +26,9 @@
 - ✅ TUI language/topic filters (l/t/c keys)
 - ✅ Config validation with warnings on load
 - ✅ `sync --prune` flag to combine sync + prune
+- ✅ `stats` command with repo counts, disk usage, top languages/topics
+- ✅ `workspace create` command to export repos with CONTEXT.md
+- ✅ Clone path customization via `clone.path_template` config
 
 ---
 
@@ -42,10 +45,7 @@
 | Task | Effort | Notes |
 |------|--------|-------|
 | GitLab forge implementation | Medium | New API client, reuse forge interface |
-| Workspace export | Medium | Copy selected repos + generate CONTEXT.md |
 | Auth commands (device flow) | Medium | `starbase auth login`, keyring storage |
-| Clone path customization | Medium | User-defined path templates |
-| Stats/dashboard command | Medium | Show sync stats, storage usage, language breakdown |
 
 ### Large Tasks (Infrastructure Required)
 
