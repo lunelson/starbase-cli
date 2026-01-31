@@ -109,6 +109,10 @@ func (c *Client) ListStars(ctx context.Context, opts forge.ListOptions) (*forge.
 		TotalCount: -1,
 	}
 
+	// GitHub returns stars newest-first, so once we hit a repo older than
+	// 'since', all subsequent repos will also be older. Track this to stop pagination.
+	hitOlderThanSince := false
+
 	for _, s := range starred {
 		repo := convertRepo(s.Repo)
 		if s.StarredAt != "" {
@@ -120,6 +124,7 @@ func (c *Client) ListStars(ctx context.Context, opts forge.ListOptions) (*forge.
 		// Filter by since if provided
 		if opts.Since != nil && repo.StarredAt != nil {
 			if repo.StarredAt.Before(*opts.Since) {
+				hitOlderThanSince = true
 				continue
 			}
 		}
@@ -127,8 +132,10 @@ func (c *Client) ListStars(ctx context.Context, opts forge.ListOptions) (*forge.
 		result.Repos = append(result.Repos, repo)
 	}
 
-	// Parse Link header for pagination
-	result.NextPage = parseNextPage(resp.Header.Get("Link"))
+	// Parse Link header for pagination, but stop if we've hit older repos
+	if !hitOlderThanSince {
+		result.NextPage = parseNextPage(resp.Header.Get("Link"))
+	}
 
 	return result, nil
 }
