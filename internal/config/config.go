@@ -24,10 +24,11 @@ type Config struct {
 }
 
 type CloneConfig struct {
-	Depth          int  `mapstructure:"depth"`
-	SingleBranch   bool `mapstructure:"single_branch"`
-	SkipSubmodules bool `mapstructure:"skip_submodules"`
-	SkipLFS        bool `mapstructure:"skip_lfs"`
+	Depth          int    `mapstructure:"depth"`
+	SingleBranch   bool   `mapstructure:"single_branch"`
+	SkipSubmodules bool   `mapstructure:"skip_submodules"`
+	SkipLFS        bool   `mapstructure:"skip_lfs"`
+	PathTemplate   string `mapstructure:"path_template"`
 }
 
 type SyncConfig struct {
@@ -276,6 +277,13 @@ func validateConfig(v *viper.Viper, cfg *Config) *ValidationResult {
 		result.Warnings = append(result.Warnings, "sync.concurrency cannot be negative")
 	}
 
+	// Validate path template syntax
+	if cfg.Clone.PathTemplate != "" {
+		if err := ValidatePathTemplate(cfg.Clone.PathTemplate); err != nil {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("invalid clone.path_template: %v", err))
+		}
+	}
+
 	return result
 }
 
@@ -297,6 +305,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("clone.single_branch", true)
 	v.SetDefault("clone.skip_submodules", true)
 	v.SetDefault("clone.skip_lfs", true)
+	v.SetDefault("clone.path_template", "{{.Forge}}/{{.Owner}}/{{.Name}}")
 
 	// Sync defaults
 	v.SetDefault("sync.default_window", "30d")

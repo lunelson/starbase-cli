@@ -348,6 +348,124 @@ func (d *DB) CountRepos() (int, error) {
 	return count, err
 }
 
+// RepoStats contains aggregate statistics about repos
+type RepoStats struct {
+	Total       int
+	Active      int
+	Archived    int
+	Unavailable int
+	Cloned      int
+	NotCloned   int
+	LastSyncAt  *time.Time
+}
+
+// LanguageCount represents a language and its repo count
+type LanguageCount struct {
+	Language string
+	Count    int
+}
+
+// TopicCount represents a topic and its repo count
+type TopicCount struct {
+	Topic string
+	Count int
+}
+
+// GetStats returns aggregate statistics about repos
+func (d *DB) GetStats() (*RepoStats, error) {
+	stats := &RepoStats{}
+
+	err := d.QueryRow("SELECT COUNT(*) FROM repos").Scan(&stats.Total)
+	if err != nil {
+		return nil, fmt.Errorf("counting total repos: %w", err)
+	}
+
+	err = d.QueryRow("SELECT COUNT(*) FROM repos WHERE status = 'active'").Scan(&stats.Active)
+	if err != nil {
+		return nil, fmt.Errorf("counting active repos: %w", err)
+	}
+
+	err = d.QueryRow("SELECT COUNT(*) FROM repos WHERE status = 'archived'").Scan(&stats.Archived)
+	if err != nil {
+		return nil, fmt.Errorf("counting archived repos: %w", err)
+	}
+
+	err = d.QueryRow("SELECT COUNT(*) FROM repos WHERE status = 'unavailable'").Scan(&stats.Unavailable)
+	if err != nil {
+		return nil, fmt.Errorf("counting unavailable repos: %w", err)
+	}
+
+	err = d.QueryRow("SELECT COUNT(*) FROM repos WHERE local_path IS NOT NULL").Scan(&stats.Cloned)
+	if err != nil {
+		return nil, fmt.Errorf("counting cloned repos: %w", err)
+	}
+
+	stats.NotCloned = stats.Total - stats.Cloned
+
+	var lastSync sql.NullString
+	err = d.QueryRow("SELECT MAX(synced_at) FROM repos").Scan(&lastSync)
+	if err != nil {
+		return nil, fmt.Errorf("getting last sync time: %w", err)
+	}
+	stats.LastSyncAt = parseTime(lastSync)
+
+	return stats, nil
+}
+
+// GetTopLanguages returns the top N languages by repo count
+func (d *DB) GetTopLanguages(limit int) ([]LanguageCount, error) {
+	rows, err := d.Query(`
+		SELECT language, COUNT(*) as cnt
+		FROM repo_metadata
+		WHERE language IS NOT NULL AND language != ''
+		GROUP BY language
+		ORDER BY cnt DESC
+		LIMIT ?
+	`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("querying top languages: %w", err)
+	}
+	defer rows.Close()
+
+	var results []LanguageCount
+	for rows.Next() {
+		var lc LanguageCount
+		if err := rows.Scan(&lc.Language, &lc.Count); err != nil {
+			return nil, fmt.Errorf("scanning language row: %w", err)
+		}
+		results = append(results, lc)
+	}
+
+	return results, rows.Err()
+}
+
+// GetTopTopics returns the top N topics by repo count
+func (d *DB) GetTopTopics(limit int) ([]TopicCount, error) {
+	rows, err := d.Query(`
+		SELECT value as topic, COUNT(*) as cnt
+		FROM repo_metadata, json_each(repo_metadata.topics)
+		WHERE topics IS NOT NULL AND topics != '[]'
+		GROUP BY value
+		ORDER BY cnt DESC
+		LIMIT ?
+	`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("querying top topics: %w", err)
+	}
+	defer rows.Close()
+
+	var results []TopicCount
+	for rows.Next() {
+		var tc TopicCount
+		if err := rows.Scan(&tc.Topic, &tc.Count); err != nil {
+			return nil, fmt.Errorf("scanning topic row: %w", err)
+		}
+		results = append(results, tc)
+	}
+
+	return results, rows.Err()
+}
+
 // Helper functions
 
 func scanRepo(row *sql.Row) (*Repo, error) {

@@ -257,8 +257,23 @@ func (s *Syncer) prepareStar(ctx context.Context, f forge.Forge, star forge.Star
 		return nil, starInfo{}, nil
 	}
 
-	// Determine local path
-	localPath := filepath.Join(s.paths.ClonesDir, forgeName, star.Owner, star.Name)
+	// Determine local path using template
+	pathTemplate := s.cfg.Clone.PathTemplate
+	if pathTemplate == "" {
+		pathTemplate = "{{.Forge}}/{{.Owner}}/{{.Name}}"
+	}
+
+	relativePath, err := config.ExpandPathTemplate(pathTemplate, config.PathTemplateData{
+		Forge:    forgeName,
+		Owner:    star.Owner,
+		Name:     star.Name,
+		FullName: star.FullName,
+		Language: star.Language,
+	})
+	if err != nil {
+		return nil, starInfo{}, fmt.Errorf("expanding path template: %w", err)
+	}
+	localPath := filepath.Join(s.paths.ClonesDir, relativePath)
 
 	info := starInfo{
 		RepoID:    repoID,
