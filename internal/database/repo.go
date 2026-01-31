@@ -267,6 +267,34 @@ func (d *DB) GetDocument(repoID int64, docType, filename string) (*RepoDocument,
 	return &doc, nil
 }
 
+// GetDocumentsByRepo retrieves all documents for a repo
+func (d *DB) GetDocumentsByRepo(repoID int64) ([]*RepoDocument, error) {
+	rows, err := d.Query(`
+		SELECT id, repo_id, doc_type, filename, content, content_hash, extracted_at
+		FROM repo_documents WHERE repo_id = ?
+	`, repoID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var docs []*RepoDocument
+	for rows.Next() {
+		var doc RepoDocument
+		var extractedAt sql.NullString
+
+		err := rows.Scan(&doc.ID, &doc.RepoID, &doc.DocType, &doc.Filename, &doc.Content, &doc.ContentHash, &extractedAt)
+		if err != nil {
+			return nil, err
+		}
+
+		doc.ExtractedAt = parseTime(extractedAt)
+		docs = append(docs, &doc)
+	}
+
+	return docs, rows.Err()
+}
+
 // UpsertAnnotation inserts or updates annotations
 func (d *DB) UpsertAnnotation(a *RepoAnnotation) error {
 	collectionsJSON, _ := json.Marshal(a.Collections)

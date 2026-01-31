@@ -254,28 +254,58 @@ repos:
 
 ## TUI Interface
 
+Built with the Charmbracelet ecosystem (Bubbletea, Bubbles, Lipgloss, Glamour).
+
+### Architecture
+
+```
+internal/tui/
+├── model.go   # Main model with viewState enum
+├── keys.go    # Centralized keyMap with help text
+└── styles.go  # Lipgloss styles
+```
+
+The TUI uses a state machine with four view states:
+
+```go
+type viewState int
+
+const (
+    listView viewState = iota  // Main repo list
+    searchView                  // FTS5 search input
+    detailView                  // Metadata + README
+    helpView                    // Keybindings overlay
+)
+```
+
 ### Views
 
-1. **List View** — Filterable table of all repos
-2. **Search View** — Query input with live results
-3. **Detail View** — Full metadata + README preview
-4. **Action Menu** — Context actions for selected repos
+1. **List View** — Repo list with multi-select checkboxes
+2. **Search View** — FTS5 query input, results update list
+3. **Detail View** — Full metadata + Glamour-rendered README in viewport
+4. **Help View** — Keybindings overlay (generated from keyMap)
 
 ### Key Bindings
 
-| Key | Action |
-|-----|--------|
-| `j` / `↓` | Move down |
-| `k` / `↑` | Move up |
-| `/` | Focus search |
-| `Enter` | Detail (single) / Actions (multi) |
-| `Space` | Toggle selection |
-| `a` / `A` | Select all / Deselect all |
-| `e` | Open in $EDITOR |
-| `w` | Open URL in browser |
-| `y` | Copy to clipboard |
-| `?` | Help |
-| `q` | Quit |
+| Key | Action | Context |
+|-----|--------|---------|
+| `j` / `↓` | Move down | List |
+| `k` / `↑` | Move up | List |
+| `/` | Focus search | List |
+| `Enter` | View details | List |
+| `Space` | Toggle selection | List |
+| `a` | Select all | List |
+| `n` | Select none | List |
+| `e` | Open in $EDITOR | List/Detail |
+| `w` | Open in browser | List/Detail |
+| `y` | Copy path | List/Detail |
+| `?` | Toggle help | Any |
+| `Esc` | Back / Cancel | Any |
+| `q` | Quit | List |
+
+### Multi-Select
+
+Selection state is tracked in a `map[int64]bool` keyed by repo ID. The `RepoItem.Selected` field is synced for rendering checkboxes. Selection persists across search/filter operations.
 
 ## Search Architecture
 
