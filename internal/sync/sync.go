@@ -292,34 +292,39 @@ func (s *Syncer) prepareStar(ctx context.Context, f forge.Forge, star forge.Star
 
 	// Check if already cloned
 	if git.IsGitRepo(localPath) {
-		if !opts.PullOnly && s.cfg.Sync.CloneMissing {
-			info.IsUpdate = true
-			return &git.Job{
-				ID:    star.FullName,
-				Type:  git.JobPull,
-				Path:  localPath,
-				Reset: s.cfg.Sync.ResetOnConflict,
-			}, info, nil
-		}
-		result.Skipped++
-		return nil, starInfo{}, nil
-	} else if !opts.PullOnly {
+		// Already cloned - pull to update
+		info.IsUpdate = true
 		return &git.Job{
-			ID:   star.FullName,
-			Type: git.JobClone,
-			URL:  star.CloneURL,
-			Path: localPath,
-			Options: git.CloneOptions{
-				Depth:          s.cfg.Clone.Depth,
-				SingleBranch:   s.cfg.Clone.SingleBranch,
-				SkipSubmodules: s.cfg.Clone.SkipSubmodules,
-				SkipLFS:        s.cfg.Clone.SkipLFS,
-			},
+			ID:    star.FullName,
+			Type:  git.JobPull,
+			Path:  localPath,
+			Reset: s.cfg.Sync.ResetOnConflict,
 		}, info, nil
 	}
 
-	result.Skipped++
-	return nil, starInfo{}, nil
+	// Not cloned yet - clone if configured and not pull-only
+	if opts.PullOnly {
+		result.Skipped++
+		return nil, starInfo{}, nil
+	}
+
+	if !s.cfg.Sync.CloneMissing {
+		result.Skipped++
+		return nil, starInfo{}, nil
+	}
+
+	return &git.Job{
+		ID:   star.FullName,
+		Type: git.JobClone,
+		URL:  star.CloneURL,
+		Path: localPath,
+		Options: git.CloneOptions{
+			Depth:          s.cfg.Clone.Depth,
+			SingleBranch:   s.cfg.Clone.SingleBranch,
+			SkipSubmodules: s.cfg.Clone.SkipSubmodules,
+			SkipLFS:        s.cfg.Clone.SkipLFS,
+		},
+	}, info, nil
 }
 
 // processGitResultsStream handles completed git jobs as they arrive
