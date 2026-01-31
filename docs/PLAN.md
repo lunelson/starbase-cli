@@ -12,6 +12,7 @@
 - ✅ Phase 5.1: TUI basics (Bubbletea browse with list/search)
 - ✅ Phase 5.2: Multi-select (space/a/n keys)
 - ✅ Phase 5.3: Detail view (Enter shows metadata + README with Glamour)
+- ✅ Phase 5.4: Actions (e/w/y for editor, browser, clipboard)
 - ✅ Phase 5.5: Help overlay (? shows keybindings)
 
 **All tests passing.** Binary builds successfully.
@@ -46,24 +47,6 @@ internal/tui/
 | `Esc` | Back |
 | `?` | Help overlay |
 | `q` | Quit |
-
----
-
-## Immediate Next Steps
-
-### Phase 5.4: Actions
-
-Implement action keys that work from both list and detail views:
-
-| Key | Action | Implementation |
-|-----|--------|----------------|
-| `e` | Open in $EDITOR | `exec.Command(os.Getenv("EDITOR"), localPath)` |
-| `w` | Open in browser | `exec.Command("open", webURL)` (macOS) |
-| `y` | Copy path | Clipboard via `golang.design/x/clipboard` |
-
-**Files to modify:**
-- `internal/tui/model.go` — Add action handlers
-- Add clipboard dependency
 
 ---
 
