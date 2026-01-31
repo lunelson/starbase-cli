@@ -52,7 +52,8 @@ go mod tidy
    - Fix the specific issue
    - Re-run verification from step 1
    - Do NOT proceed until all steps pass
-3. Only when all steps pass: commit with `jj commit -m "<message>"`
+3. Run `make install-user` to update the global `starbase` command
+4. Only when all steps pass: commit with `jj commit -m "<message>"`
 
 ### Commit Protocol
 

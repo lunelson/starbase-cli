@@ -10,9 +10,15 @@ import (
 var (
 	version   = "dev"
 	buildTime = "unknown"
+	devBuild  = "true" // Set to "false" via ldflags for release builds
 )
 
 func main() {
+	// Show dev build header for local development
+	if devBuild == "true" {
+		fmt.Fprintf(os.Stderr, "\033[2m[dev build: %s @ %s]\033[0m\n", version, buildTime)
+	}
+
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

@@ -38,5 +38,6 @@ install-local: build
 # Install to ~/.local/bin (no sudo needed)
 install-user: build
 	mkdir -p ~/.local/bin
+	rm -f ~/.local/bin/$(BINARY)
 	cp bin/$(BINARY) ~/.local/bin/
-	@echo "Ensure ~/.local/bin is in your PATH"
+	@echo "Installed starbase to ~/.local/bin (built $(BUILD_TIME))"
