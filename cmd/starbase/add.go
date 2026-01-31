@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/lunelson/starbase-cli/internal/config"
 	"github.com/lunelson/starbase-cli/internal/database"
+	"github.com/lunelson/starbase-cli/internal/forge"
 	"github.com/lunelson/starbase-cli/internal/forge/github"
 	"github.com/lunelson/starbase-cli/internal/git"
 	"github.com/lunelson/starbase-cli/internal/index"
@@ -17,11 +17,19 @@ import (
 )
 
 var addCmd = &cobra.Command{
-	Use:   "add <owner/name>",
+	Use:   "add <repo>",
 	Short: "Star and clone a repository",
 	Long: `Add a repository to your starred repos and clone it locally.
 
 If already starred, skips starring. If already cloned, skips cloning.
+Removes the repo from tombstones if previously removed.
+
+Accepts various URL formats:
+  owner/repo                         (assumes github.com)
+  https://github.com/owner/repo
+  https://github.com/owner/repo/tree/main/src/file.ts
+  git@github.com:owner/repo.git
+
 This is the inverse of 'rm'.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runAdd,
@@ -32,13 +40,15 @@ func init() {
 }
 
 func runAdd(cmd *cobra.Command, args []string) error {
-	fullName := args[0]
-
-	parts := strings.Split(fullName, "/")
-	if len(parts) != 2 {
-		return fmt.Errorf("invalid repo format: use owner/name")
+	parsed, err := forge.ParseRepoURL(args[0])
+	if err != nil {
+		return err
 	}
-	owner, name := parts[0], parts[1]
+
+	forgeName := forge.ForgeFromHost(parsed.Host)
+	if forgeName != "github" {
+		return fmt.Errorf("only GitHub is currently supported")
+	}
 
 	configDir := config.DefaultConfigDir()
 	cfg, err := config.Load(configDir)
@@ -58,6 +68,11 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	}
 	defer db.Close()
 
+	manifest, err := config.LoadManifest(configDir)
+	if err != nil {
+		return fmt.Errorf("loading manifest: %w", err)
+	}
+
 	token, err := github.ResolveToken()
 	if err != nil {
 		return fmt.Errorf("GitHub auth: %w", err)
@@ -65,35 +80,32 @@ func runAdd(cmd *cobra.Command, args []string) error {
 
 	client := github.NewClient(token.Token)
 
-	// Check if repo exists on GitHub
-	fmt.Fprintf(cmd.OutOrStdout(), "Fetching %s...\n", fullName)
-	ghRepo, err := client.GetRepo(cmd.Context(), owner, name)
+	fmt.Fprintf(cmd.OutOrStdout(), "Fetching %s...\n", parsed.FullName())
+	ghRepo, err := client.GetRepo(cmd.Context(), parsed.Owner, parsed.Name)
 	if err != nil {
 		return fmt.Errorf("fetching repo: %w", err)
 	}
 	if ghRepo == nil {
-		return fmt.Errorf("repo not found: %s", fullName)
+		return fmt.Errorf("repo not found: %s", parsed.FullName())
 	}
 
-	// Star the repo if not already starred
-	starred, err := client.IsStarred(cmd.Context(), owner, name)
+	starred, err := client.IsStarred(cmd.Context(), parsed.Owner, parsed.Name)
 	if err != nil {
 		return fmt.Errorf("checking star status: %w", err)
 	}
 
 	if starred {
-		fmt.Fprintf(cmd.OutOrStdout(), "Already starred: %s\n", fullName)
+		fmt.Fprintf(cmd.OutOrStdout(), "Already starred: %s\n", parsed.FullName())
 	} else {
-		if err := client.Star(cmd.Context(), owner, name); err != nil {
+		if err := client.Star(cmd.Context(), parsed.Owner, parsed.Name); err != nil {
 			return fmt.Errorf("starring repo: %w", err)
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "Starred: %s\n", fullName)
+		fmt.Fprintf(cmd.OutOrStdout(), "Starred: %s\n", parsed.FullName())
 	}
 
-	// Add to database
 	now := time.Now()
 	repo := &database.Repo{
-		Forge:     "github",
+		Forge:     forgeName,
 		ForgeID:   ghRepo.ForgeID,
 		Owner:     ghRepo.Owner,
 		Name:      ghRepo.Name,
@@ -110,7 +122,6 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("inserting repo: %w", err)
 	}
 
-	// Save metadata
 	desc := ghRepo.Description
 	lang := ghRepo.Language
 	branch := ghRepo.DefaultBranch
@@ -130,13 +141,12 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("saving metadata: %w", err)
 	}
 
-	// Clone if not already cloned
-	localPath := filepath.Join(paths.ClonesDir, "github", owner, name)
+	localPath := filepath.Join(paths.ClonesDir, forgeName, parsed.Owner, parsed.Name)
 
 	if git.IsGitRepo(localPath) {
 		fmt.Fprintf(cmd.OutOrStdout(), "Already cloned: %s\n", localPath)
 	} else {
-		fmt.Fprintf(cmd.OutOrStdout(), "Cloning %s...\n", fullName)
+		fmt.Fprintf(cmd.OutOrStdout(), "Cloning %s...\n", parsed.FullName())
 		cloneOpts := git.CloneOptions{
 			Depth:          cfg.Clone.Depth,
 			SingleBranch:   cfg.Clone.SingleBranch,
@@ -149,23 +159,25 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(cmd.OutOrStdout(), "Cloned: %s\n", localPath)
 	}
 
-	// Update local path in database
 	if err := db.UpdateRepoLocalPath(repoID, localPath, time.Now()); err != nil {
 		return fmt.Errorf("updating local path: %w", err)
 	}
 
-	// Extract and index
 	extractorCfg := index.DefaultExtractorConfig()
 	extractor := index.NewExtractor(db, extractorCfg)
 	if err := extractor.ExtractAndIndex(cmd.Context(), repoID, localPath); err != nil {
 		fmt.Fprintf(cmd.OutOrStderr(), "Warning: indexing failed: %v\n", err)
 	}
 
-	// Rebuild search index
 	if _, err := search.New(db.DB).RebuildIndex(); err != nil {
 		fmt.Fprintf(cmd.OutOrStderr(), "Warning: failed to rebuild search index: %v\n", err)
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "Added %s\n", fullName)
+	manifest.RemoveTombstone(parsed.ID())
+	if err := config.SaveManifest(configDir, manifest); err != nil {
+		fmt.Fprintf(cmd.OutOrStderr(), "Warning: failed to save manifest: %v\n", err)
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Added %s\n", parsed.FullName())
 	return nil
 }

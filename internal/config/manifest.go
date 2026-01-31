@@ -10,8 +10,9 @@ import (
 
 type Manifest struct {
 	Version     int            `yaml:"version"`
-	Collections []Collection   `yaml:"collections"`
-	Repos       []ManifestRepo `yaml:"repos"`
+	Collections []Collection   `yaml:"collections,omitempty"`
+	Repos       []ManifestRepo `yaml:"repos,omitempty"`
+	Tombstones  []string       `yaml:"tombstones,omitempty"`
 }
 
 type Collection struct {
@@ -144,4 +145,34 @@ func (m *Manifest) ReposInCollection(collectionName string) []ManifestRepo {
 		}
 	}
 	return result
+}
+
+// AddTombstone adds a repo ID to tombstones (no-op if already present)
+func (m *Manifest) AddTombstone(id string) {
+	for _, t := range m.Tombstones {
+		if t == id {
+			return
+		}
+	}
+	m.Tombstones = append(m.Tombstones, id)
+}
+
+// RemoveTombstone removes a repo ID from tombstones (no-op if not present)
+func (m *Manifest) RemoveTombstone(id string) {
+	for i, t := range m.Tombstones {
+		if t == id {
+			m.Tombstones = append(m.Tombstones[:i], m.Tombstones[i+1:]...)
+			return
+		}
+	}
+}
+
+// IsTombstoned checks if a repo ID is in tombstones
+func (m *Manifest) IsTombstoned(id string) bool {
+	for _, t := range m.Tombstones {
+		if t == id {
+			return true
+		}
+	}
+	return false
 }

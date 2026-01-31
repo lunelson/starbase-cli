@@ -183,6 +183,14 @@ type starInfo struct {
 func (s *Syncer) prepareStar(ctx context.Context, f forge.Forge, star forge.StarredRepo, opts Options, result *Result) (*git.Job, starInfo, error) {
 	forgeName := f.Name()
 
+	if s.manifest != nil {
+		tombstoneID := fmt.Sprintf("%s:%s", forge.HostFromForge(forgeName), star.FullName)
+		if s.manifest.IsTombstoned(tombstoneID) {
+			result.Skipped++
+			return nil, starInfo{}, nil
+		}
+	}
+
 	// Check if repo exists in DB
 	existing, err := s.db.GetRepoByForgeID(forgeName, star.ForgeID)
 	if err != nil {
