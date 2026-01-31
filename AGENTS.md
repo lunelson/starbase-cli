@@ -52,16 +52,27 @@ go mod tidy
    - Fix the specific issue
    - Re-run verification from step 1
    - Do NOT proceed until all steps pass
-3. Run `make install-user` to update the global `starbase` command
-4. Only when all steps pass: commit with `jj commit -m "<message>"`
+3. **Commit FIRST, then install** (order matters for version embedding):
+   ```bash
+   jj commit -m "<message>"
+   make install-user
+   ```
+4. Verify the installed binary shows the correct commit hash:
+   ```bash
+   starbase --version
+   ```
 
 ### Commit Protocol
 
 Use [jujutsu](https://martinvonz.github.io/jj/) for version control:
 
 ```bash
-# After verification passes
-jj commit -m "phase-X.Y: description"
+# CORRECT order: commit first, then install
+jj commit -m "type(scope): description"
+make install-user
+
+# WRONG order (embeds dirty/old version):
+# make install-user && jj commit  # ← DO NOT DO THIS
 
 # Check status
 jj status
