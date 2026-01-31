@@ -134,12 +134,12 @@ func runSync(cmd *cobra.Command, args []string) error {
 	if len(result.SkipReasons) > 0 {
 		fmt.Fprintf(cmd.OutOrStdout(), "Skipped:\n")
 		reasonLabels := map[string]string{
-			"tombstoned":     "tombstoned",
-			"private":        "clone_private=false",
-			"archived":       "clone_archived=false",
-			"metadata_only":  "--metadata-only",
-			"pull_only":      "--pull-only (not cloned)",
-			"clone_disabled": "clone_missing=false",
+			"tombstoned":     "removed from tracking",
+			"private":        "private repo (enable with sync.clone_private)",
+			"archived":       "archived repo (enable with sync.clone_archived)",
+			"metadata_only":  "metadata-only mode",
+			"pull_only":      "pull-only mode, repo not yet cloned",
+			"clone_disabled": "cloning disabled (enable with sync.clone_missing)",
 		}
 		for reason, repos := range result.SkipReasons {
 			label := reasonLabels[reason]
