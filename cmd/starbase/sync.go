@@ -30,6 +30,7 @@ var (
 	syncSince        string
 	syncDryRun       bool
 	syncConcurrency  int
+	syncPrune        bool
 )
 
 func init() {
@@ -41,6 +42,7 @@ func init() {
 	syncCmd.Flags().StringVar(&syncSince, "since", "", "Override recency window (e.g., 7d, 2w, 6mo)")
 	syncCmd.Flags().BoolVar(&syncDryRun, "dry-run", false, "Show plan without executing")
 	syncCmd.Flags().IntVar(&syncConcurrency, "concurrency", 0, "Number of parallel git operations (default: 4, max: 10)")
+	syncCmd.Flags().BoolVar(&syncPrune, "prune", false, "Also prune unstarred repos after syncing")
 }
 
 func runSync(cmd *cobra.Command, args []string) error {
@@ -136,7 +138,50 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	if syncPrune && !syncDryRun {
+		pruneResult := runPruneAfterSync(cmd, db)
+		if pruneResult > 0 {
+			fmt.Fprintf(cmd.OutOrStdout(), "  Pruned:  %d\n", pruneResult)
+		}
+	}
+
 	return nil
+}
+
+func runPruneAfterSync(cmd *cobra.Command, db *database.DB) int {
+	repos, err := db.ListRepos("")
+	if err != nil {
+		return 0
+	}
+
+	var toPrune []*database.Repo
+	for _, repo := range repos {
+		if repo.Status == "unstarred" || repo.Status == "removed" {
+			toPrune = append(toPrune, repo)
+		}
+	}
+
+	if len(toPrune) == 0 {
+		return 0
+	}
+
+	deleted := 0
+	for _, repo := range toPrune {
+		if repo.LocalPath != nil {
+			if err := os.RemoveAll(*repo.LocalPath); err != nil {
+				fmt.Fprintf(cmd.OutOrStderr(), "Warning: failed to remove clone %s: %v\n", repo.FullName, err)
+			}
+		}
+
+		if err := db.DeleteRepo(repo.ID); err != nil {
+			fmt.Fprintf(cmd.OutOrStderr(), "Warning: failed to delete %s from database: %v\n", repo.FullName, err)
+			continue
+		}
+
+		deleted++
+	}
+
+	return deleted
 }
 
 func parseDuration(s string) (time.Duration, error) {
