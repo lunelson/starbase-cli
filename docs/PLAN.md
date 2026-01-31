@@ -16,33 +16,26 @@
 - **Collections & Annotations**: notes, pins, collections in manifest
 - **Tombstones**: Removed repos stored in manifest, skipped during sync
 
-### Recent Session (Repository Identity Redesign)
+### Recent Session (Repository Identity & UX Improvements)
 - ✅ URL parser accepting multiple formats (HTTPS, SSH, web UI URLs, short form)
-- ✅ `add` command accepts any URL format
-- ✅ `rm` command with `--delete` and `--unstar` flags (default: keep files + star)
+- ✅ `add` command accepts any URL format + interactive mode for untracked stars
+- ✅ `rm` command with `--delete` and `--unstar` flags + interactive multiselect mode
 - ✅ Tombstones in manifest (cross-machine sync)
 - ✅ Sync respects tombstones
+- ✅ TUI batch actions (e/w/y on multiple selected repos)
+- ✅ TUI language/topic filters (l/t/c keys)
+- ✅ Config validation with warnings on load
+- ✅ `sync --prune` flag to combine sync + prune
 
 ---
 
 ## What's Next
 
-### Immediate (Current Subphase)
-
-| Task | Effort | Notes |
-|------|--------|-------|
-| `rm` interactive mode | Small | Multiselect when no repo arg provided |
-| DB schema migration to `host:owner/repo` IDs | Medium | Currently deferred; tombstones use new format, DB uses ForgeID |
-
 ### Small Tasks (Ready Now)
 
 | Task | Effort | Notes |
 |------|--------|-------|
-| `add` interactive mode | Small | Search/select from untracked stars |
-| TUI: batch actions on selection | Small | e/w/y on multiple selected repos |
-| TUI: filtering by language/topic | Small | Add filter UI to list view |
-| Config validation on load | Small | Warn on unknown keys, validate paths |
-| `sync --prune` flag | Small | Combine sync + prune in one command |
+| DB schema migration to `host:owner/repo` IDs | Medium | Currently deferred; tombstones use new format, DB uses ForgeID |
 
 ### Medium Tasks (Self-Contained)
 
