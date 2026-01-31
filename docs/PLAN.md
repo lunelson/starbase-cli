@@ -14,6 +14,8 @@
 - ✅ Phase 5.3: Detail view (Enter shows metadata + README with Glamour)
 - ✅ Phase 5.4: Actions (e/w/y for editor, browser, clipboard)
 - ✅ Phase 5.5: Help overlay (? shows keybindings)
+- ✅ Phase 7.3: repo add/remove commands
+- ✅ Phase 8.1: Prune command
 
 **All tests passing.** Binary builds successfully.
 
@@ -70,13 +72,11 @@ internal/tui/
 |------|---------|
 | 7.1 | Forge interface refinement |
 | 7.2 | GitLab API client |
-| 7.3 | `add` / `remove` commands |
 
 ### Phase 8: Advanced Features
 
 | Step | Feature |
 |------|---------|
-| 8.1 | Prune command |
 | 8.2 | Workspace export (copy repos + CONTEXT.md) |
 | 8.3 | Auth commands (device flow, keyring) |
 | 8.4 | MCP server mode (stretch) |
