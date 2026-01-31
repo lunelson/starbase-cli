@@ -2,8 +2,12 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"runtime"
 	"strings"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -74,7 +78,10 @@ type Model struct {
 	// Dimensions
 	width  int
 	height int
-	err    error
+
+	// Status
+	err        error
+	statusText string
 }
 
 // New creates a new TUI model
@@ -164,6 +171,12 @@ type errMsg struct {
 	err error
 }
 
+type statusMsg struct {
+	text string
+}
+
+type clearStatusMsg struct{}
+
 // Update handles events
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
@@ -197,6 +210,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case errMsg:
 		m.err = msg.err
+
+	case statusMsg:
+		m.statusText = msg.text
+
+	case clearStatusMsg:
+		m.statusText = ""
 	}
 
 	// Update sub-models based on state
@@ -308,6 +327,21 @@ func (m *Model) handleListKeys(msg tea.KeyMsg) tea.Cmd {
 	case key.Matches(msg, m.keys.SelectNone):
 		m.selected = make(map[int64]bool)
 		m.updateItemSelection()
+
+	case key.Matches(msg, m.keys.OpenEditor):
+		if item, ok := m.list.SelectedItem().(RepoItem); ok {
+			return m.openInEditor(item)
+		}
+
+	case key.Matches(msg, m.keys.OpenWeb):
+		if item, ok := m.list.SelectedItem().(RepoItem); ok {
+			return m.openInBrowser(item)
+		}
+
+	case key.Matches(msg, m.keys.CopyPath):
+		if item, ok := m.list.SelectedItem().(RepoItem); ok {
+			return m.copyPath(item)
+		}
 	}
 
 	return nil
@@ -351,7 +385,21 @@ func (m *Model) handleSearchKeys(msg tea.KeyMsg) tea.Cmd {
 }
 
 func (m *Model) handleDetailKeys(msg tea.KeyMsg) tea.Cmd {
-	// Detail view uses viewport for scrolling, handled in Update
+	if m.detailRepo == nil {
+		return nil
+	}
+
+	switch {
+	case key.Matches(msg, m.keys.OpenEditor):
+		return m.openInEditor(*m.detailRepo)
+
+	case key.Matches(msg, m.keys.OpenWeb):
+		return m.openInBrowser(*m.detailRepo)
+
+	case key.Matches(msg, m.keys.CopyPath):
+		return m.copyPath(*m.detailRepo)
+	}
+
 	return nil
 }
 
@@ -375,6 +423,70 @@ func (m *Model) loadDetail() tea.Msg {
 	}
 
 	return detailLoadedMsg{readme: readme}
+}
+
+func (m *Model) openInEditor(repo RepoItem) tea.Cmd {
+	return func() tea.Msg {
+		if repo.LocalPath == "" {
+			return statusMsg{text: "No local path - clone first"}
+		}
+
+		editor := os.Getenv("EDITOR")
+		if editor == "" {
+			editor = "vim"
+		}
+
+		cmd := exec.Command(editor, repo.LocalPath)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		if err := cmd.Run(); err != nil {
+			return statusMsg{text: fmt.Sprintf("Editor error: %v", err)}
+		}
+
+		return statusMsg{text: fmt.Sprintf("Opened %s", repo.FullName)}
+	}
+}
+
+func (m *Model) openInBrowser(repo RepoItem) tea.Cmd {
+	return func() tea.Msg {
+		if repo.WebURL == "" {
+			return statusMsg{text: "No web URL available"}
+		}
+
+		var cmd *exec.Cmd
+		switch runtime.GOOS {
+		case "darwin":
+			cmd = exec.Command("open", repo.WebURL)
+		case "linux":
+			cmd = exec.Command("xdg-open", repo.WebURL)
+		case "windows":
+			cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", repo.WebURL)
+		default:
+			return statusMsg{text: "Unsupported OS for browser open"}
+		}
+
+		if err := cmd.Start(); err != nil {
+			return statusMsg{text: fmt.Sprintf("Browser error: %v", err)}
+		}
+
+		return statusMsg{text: fmt.Sprintf("Opened %s in browser", repo.FullName)}
+	}
+}
+
+func (m *Model) copyPath(repo RepoItem) tea.Cmd {
+	return func() tea.Msg {
+		if repo.LocalPath == "" {
+			return statusMsg{text: "No local path - clone first"}
+		}
+
+		if err := clipboard.WriteAll(repo.LocalPath); err != nil {
+			return statusMsg{text: fmt.Sprintf("Clipboard error: %v", err)}
+		}
+
+		return statusMsg{text: fmt.Sprintf("Copied: %s", repo.LocalPath)}
+	}
 }
 
 func (m *Model) renderDetailContent(readme string) string {
@@ -508,8 +620,15 @@ func (m Model) viewList() string {
 	var s strings.Builder
 	s.WriteString(m.list.View())
 
+	var statusParts []string
 	if count := m.SelectedCount(); count > 0 {
-		s.WriteString(statusStyle.Render(fmt.Sprintf(" %d selected", count)))
+		statusParts = append(statusParts, fmt.Sprintf("%d selected", count))
+	}
+	if m.statusText != "" {
+		statusParts = append(statusParts, m.statusText)
+	}
+	if len(statusParts) > 0 {
+		s.WriteString(statusStyle.Render(" " + strings.Join(statusParts, " • ")))
 	}
 
 	return s.String()
@@ -532,7 +651,12 @@ func (m Model) viewDetail() string {
 	var s strings.Builder
 	s.WriteString(m.detailViewport.View())
 	s.WriteString("\n")
-	s.WriteString(statusStyle.Render("↑/↓ scroll • esc back • ? help"))
+
+	statusText := "↑/↓ scroll • e editor • w browser • y copy • esc back"
+	if m.statusText != "" {
+		statusText = m.statusText + " • " + statusText
+	}
+	s.WriteString(statusStyle.Render(statusText))
 
 	return s.String()
 }
