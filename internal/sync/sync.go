@@ -173,10 +173,11 @@ func (s *Syncer) fetchAllStars(ctx context.Context, f forge.Forge, since *time.T
 
 // starInfo holds info needed to process git results
 type starInfo struct {
-	RepoID    int64
-	FullName  string
-	LocalPath string
-	IsUpdate  bool
+	RepoID        int64
+	FullName      string
+	LocalPath     string
+	IsUpdate      bool
+	NeedsDBUpdate bool // true if repo exists on disk but DB lacks local_path
 }
 
 // prepareStar saves metadata to DB and returns a git job if needed
@@ -294,6 +295,10 @@ func (s *Syncer) prepareStar(ctx context.Context, f forge.Forge, star forge.Star
 	if git.IsGitRepo(localPath) {
 		// Already cloned - pull to update
 		info.IsUpdate = true
+		// Check if DB needs to learn about this existing clone
+		if existing == nil || existing.LocalPath == nil {
+			info.NeedsDBUpdate = true
+		}
 		return &git.Job{
 			ID:    star.FullName,
 			Type:  git.JobPull,
@@ -349,6 +354,14 @@ func (s *Syncer) processGitResultsStream(ctx context.Context, results <-chan git
 
 		if info.IsUpdate {
 			result.Updated++
+			// Update DB if repo exists on disk but DB didn't know
+			if info.NeedsDBUpdate {
+				if err := s.db.UpdateRepoLocalPath(info.RepoID, info.LocalPath, time.Now()); err != nil {
+					if !s.progress.IsTTY() {
+						fmt.Fprintf(s.out, "  Warning: failed to update local path for %s: %v\n", info.FullName, err)
+					}
+				}
+			}
 		} else {
 			// Update database with local path for new clones
 			if err := s.db.UpdateRepoLocalPath(info.RepoID, info.LocalPath, time.Now()); err != nil {
