@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 
+	"github.com/charmbracelet/huh"
 	"github.com/lunelson/starbase-cli/internal/config"
 	"github.com/lunelson/starbase-cli/internal/database"
 	"github.com/lunelson/starbase-cli/internal/forge"
@@ -12,10 +13,12 @@ import (
 )
 
 var rmCmd = &cobra.Command{
-	Use:     "rm <repo>",
+	Use:     "rm [repo]",
 	Aliases: []string{"remove"},
 	Short:   "Remove a repository from starbase",
 	Long: `Remove a repository from starbase tracking.
+
+If no repo is specified, launches interactive multiselect mode.
 
 By default, keeps the local clone and star on GitHub. Use flags to change:
   --delete   Delete the local clone from disk
@@ -27,7 +30,7 @@ Accepts various URL formats:
   git@github.com:owner/repo.git
 
 Removed repos are tombstoned to prevent re-syncing. Use 'add' to un-tombstone.`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MaximumNArgs(1),
 	RunE: runRm,
 }
 
@@ -43,13 +46,6 @@ func init() {
 }
 
 func runRm(cmd *cobra.Command, args []string) error {
-	parsed, err := forge.ParseRepoURL(args[0])
-	if err != nil {
-		return err
-	}
-
-	forgeName := forge.ForgeFromHost(parsed.Host)
-
 	configDir := config.DefaultConfigDir()
 	cfg, err := config.Load(configDir)
 	if err != nil {
@@ -68,6 +64,103 @@ func runRm(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("loading manifest: %w", err)
 	}
+
+	if len(args) == 0 {
+		return runRmInteractive(cmd, db, manifest, configDir)
+	}
+
+	parsed, err := forge.ParseRepoURL(args[0])
+	if err != nil {
+		return err
+	}
+
+	return removeRepo(cmd, db, manifest, configDir, parsed)
+}
+
+func runRmInteractive(cmd *cobra.Command, db *database.DB, manifest *config.Manifest, configDir string) error {
+	repos, err := db.ListRepos("")
+	if err != nil {
+		return fmt.Errorf("listing repos: %w", err)
+	}
+
+	if len(repos) == 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), "No repositories in starbase.")
+		return nil
+	}
+
+	options := make([]huh.Option[int64], 0, len(repos))
+	for _, r := range repos {
+		options = append(options, huh.NewOption(r.FullName, r.ID))
+	}
+
+	var selectedIDs []int64
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewMultiSelect[int64]().
+				Title("Select repositories to remove").
+				Description("Space to select, Enter to confirm").
+				Options(options...).
+				Value(&selectedIDs).
+				Filterable(true).
+				Height(15),
+		),
+	)
+
+	if err := form.Run(); err != nil {
+		return fmt.Errorf("selection cancelled")
+	}
+
+	if len(selectedIDs) == 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), "No repositories selected.")
+		return nil
+	}
+
+	var confirm bool
+	confirmMsg := fmt.Sprintf("Remove %d repository(ies)?", len(selectedIDs))
+	if rmDelete {
+		confirmMsg = fmt.Sprintf("Remove %d repository(ies) and delete from disk?", len(selectedIDs))
+	}
+
+	confirmForm := huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title(confirmMsg).
+				Value(&confirm),
+		),
+	)
+
+	if err := confirmForm.Run(); err != nil || !confirm {
+		fmt.Fprintln(cmd.OutOrStdout(), "Cancelled.")
+		return nil
+	}
+
+	repoMap := make(map[int64]*database.Repo)
+	for _, r := range repos {
+		repoMap[r.ID] = r
+	}
+
+	for _, id := range selectedIDs {
+		repo := repoMap[id]
+		if repo == nil {
+			continue
+		}
+
+		parsed := &forge.ParsedRepo{
+			Host:  forge.HostFromForge(repo.Forge),
+			Owner: repo.Owner,
+			Name:  repo.Name,
+		}
+
+		if err := removeRepo(cmd, db, manifest, configDir, parsed); err != nil {
+			fmt.Fprintf(cmd.OutOrStderr(), "Error removing %s: %v\n", repo.FullName, err)
+		}
+	}
+
+	return nil
+}
+
+func removeRepo(cmd *cobra.Command, db *database.DB, manifest *config.Manifest, configDir string, parsed *forge.ParsedRepo) error {
+	forgeName := forge.ForgeFromHost(parsed.Host)
 
 	repo, err := db.GetRepoByFullName(forgeName, parsed.FullName())
 	if err != nil {
